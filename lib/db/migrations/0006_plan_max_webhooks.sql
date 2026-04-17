@@ -1,0 +1,1 @@
+ALTER TABLE "plans" ADD COLUMN IF NOT EXISTS "max_webhooks" integer DEFAULT 3 NOT NULL;

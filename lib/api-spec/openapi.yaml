@@ -1,0 +1,1593 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: SaaS Vertex AI Gateway — API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health check
+  - name: admin-auth
+    description: Admin authentication
+  - name: admin-providers
+    description: Vertex AI provider management
+  - name: admin-plans
+    description: Subscription plan management
+  - name: admin-users
+    description: Developer account management
+  - name: admin-api-keys
+    description: API key management
+  - name: admin-analytics
+    description: Platform analytics
+  - name: portal
+    description: Developer self-service portal
+  - name: ai-proxy
+    description: Vertex AI proxy endpoints
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  # ─── Admin Auth ───────────────────────────────────────────────────────────
+  /admin/auth/login:
+    post:
+      operationId: adminLogin
+      tags: [admin-auth]
+      summary: Admin login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /portal/auth/login:
+    post:
+      operationId: portalLogin
+      tags: [portal]
+      summary: Developer portal login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /portal/auth/register:
+    post:
+      operationId: portalRegister
+      tags: [portal]
+      summary: Developer self-registration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterBody"
+      responses:
+        "201":
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "409":
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Admin Providers ──────────────────────────────────────────────────────
+  /admin/providers:
+    get:
+      operationId: listProviders
+      tags: [admin-providers]
+      summary: List all Vertex AI providers
+      responses:
+        "200":
+          description: List of providers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Provider"
+    post:
+      operationId: createProvider
+      tags: [admin-providers]
+      summary: Add a new Vertex AI provider
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProviderBody"
+      responses:
+        "201":
+          description: Provider created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Provider"
+
+  /admin/providers/{id}:
+    put:
+      operationId: updateProvider
+      tags: [admin-providers]
+      summary: Update a Vertex AI provider
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProviderBody"
+      responses:
+        "200":
+          description: Provider updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Provider"
+    delete:
+      operationId: deleteProvider
+      tags: [admin-providers]
+      summary: Delete a Vertex AI provider
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Provider deleted
+
+  /admin/providers/{id}/test:
+    post:
+      operationId: testProvider
+      tags: [admin-providers]
+      summary: Test a Vertex AI provider's credentials
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Test result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestProviderResult"
+
+  # ─── Admin Plans ──────────────────────────────────────────────────────────
+  /admin/plans:
+    get:
+      operationId: listPlans
+      tags: [admin-plans]
+      summary: List all subscription plans
+      responses:
+        "200":
+          description: List of plans
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Plan"
+    post:
+      operationId: createPlan
+      tags: [admin-plans]
+      summary: Create a new plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePlanBody"
+      responses:
+        "201":
+          description: Plan created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plan"
+
+  /admin/plans/{id}:
+    get:
+      operationId: getPlan
+      tags: [admin-plans]
+      summary: Get a plan by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Plan found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plan"
+        "404":
+          description: Plan not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updatePlan
+      tags: [admin-plans]
+      summary: Update a plan
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePlanBody"
+      responses:
+        "200":
+          description: Plan updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plan"
+        "404":
+          description: Plan not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deletePlan
+      tags: [admin-plans]
+      summary: Delete a plan
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Plan deleted
+        "404":
+          description: Plan not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Admin Users ──────────────────────────────────────────────────────────
+  /admin/users:
+    get:
+      operationId: listUsers
+      tags: [admin-users]
+      summary: List all developer accounts
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Paginated list of users
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserListResponse"
+    post:
+      operationId: createUser
+      tags: [admin-users]
+      summary: Create a developer account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserBody"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "409":
+          description: Email already in use
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /admin/users/{id}:
+    get:
+      operationId: getUser
+      tags: [admin-users]
+      summary: Get a user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateUser
+      tags: [admin-users]
+      summary: Update a user account
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserBody"
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteUser
+      tags: [admin-users]
+      summary: Delete a user account
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: User deleted
+        "404":
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Admin API Keys ───────────────────────────────────────────────────────
+  /admin/api-keys:
+    get:
+      operationId: listApiKeys
+      tags: [admin-api-keys]
+      summary: List all API keys
+      parameters:
+        - name: userId
+          in: query
+          schema:
+            type: integer
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Paginated list of API keys
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyListResponse"
+    post:
+      operationId: createApiKey
+      tags: [admin-api-keys]
+      summary: Create a new API key for a developer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApiKeyBody"
+      responses:
+        "201":
+          description: API key created (raw key shown once)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateApiKeyResponse"
+
+  /admin/api-keys/{id}:
+    get:
+      operationId: getApiKey
+      tags: [admin-api-keys]
+      summary: Get an API key by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: API key found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKey"
+        "404":
+          description: API key not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateApiKey
+      tags: [admin-api-keys]
+      summary: Update an API key (balance, status, plan)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateApiKeyBody"
+      responses:
+        "200":
+          description: API key updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKey"
+        "404":
+          description: API key not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: revokeApiKey
+      tags: [admin-api-keys]
+      summary: Revoke an API key
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: API key revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKey"
+        "404":
+          description: API key not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Admin Analytics ──────────────────────────────────────────────────────
+  /admin/analytics/stats:
+    get:
+      operationId: getAnalyticsStats
+      tags: [admin-analytics]
+      summary: Get global platform analytics
+      responses:
+        "200":
+          description: Analytics stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyticsStats"
+
+  /admin/analytics/usage:
+    get:
+      operationId: listAnalyticsUsage
+      tags: [admin-analytics]
+      summary: List usage logs with pagination
+      parameters:
+        - name: apiKeyId
+          in: query
+          schema:
+            type: integer
+        - name: userId
+          in: query
+          schema:
+            type: integer
+        - name: model
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Paginated usage logs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageLogListResponse"
+
+  # ─── Developer Portal ─────────────────────────────────────────────────────
+  /portal/me:
+    get:
+      operationId: getPortalMe
+      tags: [portal]
+      summary: Get current developer's profile
+      responses:
+        "200":
+          description: Developer profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalMe"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /portal/api-keys:
+    get:
+      operationId: getPortalApiKeys
+      tags: [portal]
+      summary: Get developer's own API keys (includes decrypted fullKey if available)
+      responses:
+        "200":
+          description: Developer's API keys with optional decrypted key
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PortalApiKey"
+    post:
+      operationId: createPortalApiKey
+      tags: [portal]
+      summary: Create a new API key for the developer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePortalApiKeyBody"
+      responses:
+        "201":
+          description: API key created (includes the full plaintext key once)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatePortalApiKeyResult"
+
+  /portal/api-keys/{id}:
+    delete:
+      operationId: deletePortalApiKey
+      tags: [portal]
+      summary: Revoke (delete) one of the developer's API keys
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: API key revoked
+
+  /portal/api-keys/{id}/reveal:
+    get:
+      operationId: revealPortalApiKey
+      tags: [portal]
+      summary: Reveal the plaintext value of one of the developer's API keys
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: API key revealed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevealPortalApiKeyResult"
+
+  /portal/plans:
+    get:
+      operationId: listPortalPlans
+      tags: [portal]
+      summary: List plans available to the developer
+      responses:
+        "200":
+          description: List of active plans
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Plan"
+        "401":
+          description: Unauthorized
+
+  /portal/usage:
+    get:
+      operationId: getPortalUsage
+      tags: [portal]
+      summary: Get developer's usage analytics
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 30
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Developer usage analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalUsageResponse"
+
+  # ─── AI Proxy ─────────────────────────────────────────────────────────────
+  /v1/chat:
+    post:
+      operationId: chatCompletion
+      tags: [ai-proxy]
+      summary: Chat with a Gemini model (OpenAI-compatible)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+      responses:
+        "200":
+          description: Chat response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatResponse"
+        "402":
+          description: Insufficient credits
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/generate:
+    post:
+      operationId: generateContent
+      tags: [ai-proxy]
+      summary: Generate images with Imagen 3
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateRequest"
+      responses:
+        "200":
+          description: Generated content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateResponse"
+        "402":
+          description: Insufficient credits
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/video:
+    post:
+      operationId: generateVideo
+      tags: [ai-proxy]
+      summary: Generate a video with Veo (async by default, optional synchronous wait)
+      description: |
+        Starts a Veo video generation job. Returns 202 with a jobId that can be polled
+        via `/v1/video/{jobId}/status`. If `wait=true` is passed, the server polls
+        internally and returns 200 with the final `videoUrl` (up to 4 minutes).
+
+        Duplicate requests (same apiKey + model + prompt + duration) within 10 minutes
+        return the original jobId with a `duplicateOf` field and are NOT re-billed.
+      parameters:
+        - name: wait
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: If true, server polls internally and returns the completed video in one call.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VideoRequest"
+      responses:
+        "200":
+          description: |
+            Returned in two cases:
+              1. `wait=true` and the job finished (status=completed or failed).
+              2. Duplicate request within the 10-minute idempotency window — the
+                 original jobId is echoed with `duplicateOf` and `note` fields
+                 (status may still be `pending`; no new charge).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoJobResponse"
+        "202":
+          description: Video generation started (async) or wait-mode timed out before completion.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoJobResponse"
+
+  /v1/video/{jobId}/status:
+    get:
+      operationId: getVideoStatus
+      tags: [ai-proxy]
+      summary: Poll video generation job status
+      description: |
+        Returns the current job status. Uses lightweight API-key authentication
+        (validates key only; works even when the account balance reaches zero,
+        so already-paid jobs can still be retrieved). Job ownership is enforced
+        via the originating API key.
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VideoJobResponse"
+
+  /v1/video/{jobId}/download:
+    get:
+      operationId: downloadVideo
+      tags: [ai-proxy]
+      summary: Download a completed video as a real video/mp4 file
+      description: |
+        Returns the finished video as a real `video/mp4` binary (with a `Content-Disposition`
+        attachment header) so that HTTP clients (n8n, Zapier, browsers) can save or forward
+        it without any base64 decoding. Handles three upstream URI shapes:
+        `data:video/mp4;base64,…` (decoded inline), `gs://…` (proxied via the
+        Google-authenticated Storage API), and `https://…` (proxied only for
+        allow-listed Google Storage hosts — SSRF guarded). Uses lightweight API-key
+        auth so zero-balance accounts can still download their paid jobs.
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Binary MP4 video file
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        "409":
+          description: Job is still processing — poll the status endpoint first
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  schemas:
+    # ─── Shared ───────────────────────────────────────────────────────────
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+      required: [email, password]
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+      required: [token, user]
+
+    # ─── Plan ─────────────────────────────────────────────────────────────
+    Plan:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        monthlyCredits:
+          type: number
+        rpm:
+          type: integer
+        maxApiKeys:
+          type: integer
+        modelsAllowed:
+          type: array
+          items:
+            type: string
+        priceUsd:
+          type: number
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, name, monthlyCredits, rpm, maxApiKeys, maxWebhooks, modelsAllowed, priceUsd, isActive, createdAt, updatedAt]
+
+    CreatePlanBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        monthlyCredits:
+          type: number
+        rpm:
+          type: integer
+        maxApiKeys:
+          type: integer
+        maxWebhooks:
+          type: integer
+        modelsAllowed:
+          type: array
+          items:
+            type: string
+        priceUsd:
+          type: number
+        isActive:
+          type: boolean
+      required: [name, monthlyCredits, rpm, modelsAllowed, priceUsd]
+
+    UpdatePlanBody:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        monthlyCredits:
+          type: number
+        rpm:
+          type: integer
+        maxApiKeys:
+          type: integer
+        maxWebhooks:
+          type: integer
+        modelsAllowed:
+          type: array
+          items:
+            type: string
+        priceUsd:
+          type: number
+        isActive:
+          type: boolean
+
+    # ─── User ─────────────────────────────────────────────────────────────
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        isActive:
+          type: boolean
+        emailVerified:
+          type: boolean
+        creditBalance:
+          type: number
+          description: Subscription credit balance (plan-restricted)
+        topupCreditBalance:
+          type: number
+          description: Top-up credit balance (works on all models, never expires)
+        currentPlanId:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, email, name, role, isActive, emailVerified, creditBalance, topupCreditBalance, createdAt, updatedAt]
+
+    UserListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [items, total, page, limit]
+
+    CreateUserBody:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+      required: [email, password, name]
+
+    UpdateUserBody:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        isActive:
+          type: boolean
+        role:
+          type: string
+
+    # ─── ApiKey ───────────────────────────────────────────────────────────
+    ApiKey:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        planId:
+          type: integer
+        keyPrefix:
+          type: string
+        name:
+          type: ["string", "null"]
+        creditBalance:
+          type: number
+        isActive:
+          type: boolean
+        lastUsedAt:
+          type: ["string", "null"]
+          format: date-time
+        revokedAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, userId, planId, keyPrefix, creditBalance, isActive, createdAt, updatedAt]
+
+    PortalApiKey:
+      allOf:
+        - $ref: "#/components/schemas/ApiKey"
+        - type: object
+          properties:
+            fullKey:
+              type: ["string", "null"]
+              description: Decrypted full API key for display (null for legacy keys without encryption)
+
+    CreatePortalApiKeyBody:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        planId:
+          type: integer
+
+    CreatePortalApiKeyResult:
+      type: object
+      properties:
+        id:
+          type: integer
+        keyPrefix:
+          type: string
+        fullKey:
+          type: string
+        name:
+          type: ["string", "null"]
+        isActive:
+          type: boolean
+        creditBalance:
+          type: number
+          description: Initial credit balance assigned (when a plan was selected); 0 otherwise.
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, keyPrefix, fullKey, isActive, createdAt]
+
+    RevealPortalApiKeyResult:
+      type: object
+      properties:
+        fullKey:
+          type: string
+      required: [fullKey]
+
+    ApiKeyListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApiKey"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [items, total, page, limit]
+
+    CreateApiKeyBody:
+      type: object
+      properties:
+        userId:
+          type: integer
+        planId:
+          type: integer
+        name:
+          type: string
+        creditBalance:
+          type: number
+      required: [userId, planId]
+
+    CreateApiKeyResponse:
+      type: object
+      properties:
+        apiKey:
+          $ref: "#/components/schemas/ApiKey"
+        rawKey:
+          type: string
+      required: [apiKey, rawKey]
+
+    UpdateApiKeyBody:
+      type: object
+      properties:
+        name:
+          type: string
+        planId:
+          type: integer
+        creditBalance:
+          type: number
+        isActive:
+          type: boolean
+
+    # ─── UsageLog ─────────────────────────────────────────────────────────
+    UsageLog:
+      type: object
+      properties:
+        id:
+          type: integer
+        apiKeyId:
+          type: integer
+        model:
+          type: string
+        inputTokens:
+          type: integer
+        outputTokens:
+          type: integer
+        totalTokens:
+          type: integer
+        costUsd:
+          type: number
+        requestId:
+          type: string
+        status:
+          type: string
+        errorMessage:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, apiKeyId, model, inputTokens, outputTokens, totalTokens, costUsd, requestId, status, createdAt]
+
+    UsageLogListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/UsageLog"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [items, total, page, limit]
+
+    # ─── Analytics ────────────────────────────────────────────────────────
+    AnalyticsStats:
+      type: object
+      properties:
+        totalRequestsToday:
+          type: integer
+        totalTokensToday:
+          type: integer
+        totalCostTodayUsd:
+          type: number
+        totalRequestsThisMonth:
+          type: integer
+        totalTokensThisMonth:
+          type: integer
+        totalCostThisMonthUsd:
+          type: number
+        activeApiKeys:
+          type: integer
+        activeUsers:
+          type: integer
+        topModelToday:
+          type: ["string", "null"]
+      required:
+        - totalRequestsToday
+        - totalTokensToday
+        - totalCostTodayUsd
+        - totalRequestsThisMonth
+        - totalTokensThisMonth
+        - totalCostThisMonthUsd
+        - activeApiKeys
+        - activeUsers
+
+    # ─── Portal ───────────────────────────────────────────────────────────
+    DailyUsage:
+      type: object
+      properties:
+        date:
+          type: string
+        totalRequests:
+          type: integer
+        totalTokens:
+          type: integer
+        totalCostUsd:
+          type: number
+      required: [date, totalRequests, totalTokens, totalCostUsd]
+
+    PortalMe:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        totalCreditsBalance:
+          type: number
+          description: Sum of subscription credit + top-up credit
+        subscriptionCreditBalance:
+          type: number
+          description: Plan-restricted credit (works only on plan models)
+        topupCreditBalance:
+          type: number
+          description: Pay-as-you-go credit (works on all models, never expires)
+        totalRequestsThisMonth:
+          type: integer
+        totalTokensThisMonth:
+          type: integer
+      required: [user, totalCreditsBalance, subscriptionCreditBalance, topupCreditBalance, totalRequestsThisMonth, totalTokensThisMonth]
+
+    PortalUsageResponse:
+      type: object
+      properties:
+        dailyUsage:
+          type: array
+          items:
+            $ref: "#/components/schemas/DailyUsage"
+        recentLogs:
+          type: array
+          items:
+            $ref: "#/components/schemas/UsageLog"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [dailyUsage, recentLogs, total, page, limit]
+
+    # ─── AI Proxy ─────────────────────────────────────────────────────────
+    ChatMessage:
+      type: object
+      properties:
+        role:
+          type: string
+        content:
+          type: string
+      required: [role, content]
+
+    ChatRequest:
+      type: object
+      properties:
+        model:
+          type: string
+          description: "Gemini model ID (e.g. gemini-2.5-flash, gemini-2.5-pro)"
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatMessage"
+        stream:
+          type: boolean
+          default: false
+        temperature:
+          type: number
+        maxOutputTokens:
+          type: integer
+      required: [model, messages]
+
+    ChatResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        model:
+          type: string
+        content:
+          type: string
+        inputTokens:
+          type: integer
+        outputTokens:
+          type: integer
+        totalTokens:
+          type: integer
+        costUsd:
+          type: number
+      required: [id, model, content, inputTokens, outputTokens, totalTokens, costUsd]
+
+    GenerateRequest:
+      type: object
+      properties:
+        model:
+          type: string
+          description: "Image model ID (e.g. imagen-3.0-generate-001)"
+          default: "imagen-3.0-generate-001"
+        prompt:
+          type: string
+        sampleCount:
+          type: integer
+          default: 1
+      required: [prompt]
+
+    GeneratedImage:
+      type: object
+      properties:
+        base64:
+          type: string
+        mimeType:
+          type: string
+      required: [base64, mimeType]
+
+    GenerateResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        model:
+          type: string
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/GeneratedImage"
+        costUsd:
+          type: number
+      required: [id, model, images, costUsd]
+
+    VideoRequest:
+      type: object
+      properties:
+        model:
+          type: string
+          description: "Video model ID (e.g. veo-3.1-generate-001)"
+          default: "veo-3.1-generate-001"
+        prompt:
+          type: string
+        durationSeconds:
+          description: Length of the generated clip in seconds. Accepts a string for n8n/Zapier compatibility.
+          oneOf:
+            - type: integer
+            - type: string
+          default: 5
+        sampleCount:
+          description: Number of video samples to generate. Accepts a string for n8n/Zapier compatibility.
+          oneOf:
+            - type: integer
+            - type: string
+          default: 1
+        wait:
+          type: boolean
+          description: If true, the server polls internally and returns the completed video in a single call.
+          default: false
+        waitTimeoutMs:
+          type: integer
+          description: Optional override (ms) for the synchronous wait timeout. Capped at 240000.
+          default: 180000
+      required: [prompt]
+
+    VideoJobResponse:
+      type: object
+      properties:
+        jobId:
+          type: string
+        status:
+          type: string
+          description: "One of: pending, completed, failed"
+        videoUrl:
+          type: ["string", "null"]
+          description: "Final URL when status=completed. May be a data URL (data:video/mp4;base64,…), a gs:// URI, or an https URL. Use /v1/video/{jobId}/download to fetch the raw MP4 bytes."
+        errorMessage:
+          type: ["string", "null"]
+        model:
+          type: string
+        costUsd:
+          type: ["number", "null"]
+        duplicateOf:
+          type: ["string", "null"]
+          description: Present when the request was deduplicated against a prior jobId (no new charge).
+        note:
+          type: ["string", "null"]
+          description: Human-readable note, e.g. "Duplicate request detected — returning existing job (no additional charge)."
+        statusUrl:
+          type: ["string", "null"]
+          description: Full URL to poll job status.
+        pollIntervalSeconds:
+          type: ["integer", "null"]
+          description: Suggested polling interval in seconds.
+        estimatedSeconds:
+          type: ["integer", "null"]
+          description: Rough time-to-completion estimate.
+      required: [jobId, status, model]
+
+    RegisterBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 2
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+      required: [name, email, password]
+
+    Provider:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        projectId:
+          type: string
+        location:
+          type: string
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, name, projectId, location, isActive, createdAt, updatedAt]
+
+    CreateProviderBody:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        projectId:
+          type: string
+          minLength: 1
+        location:
+          type: string
+          default: "us-central1"
+        credentialsJson:
+          type: string
+          description: Service account JSON string
+        isActive:
+          type: boolean
+          default: true
+      required: [name, projectId, credentialsJson]
+
+    UpdateProviderBody:
+      type: object
+      properties:
+        name:
+          type: string
+        projectId:
+          type: string
+        location:
+          type: string
+        credentialsJson:
+          type: string
+          description: Service account JSON string (optional, leave empty to keep existing)
+        isActive:
+          type: boolean
+
+    TestProviderResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+      required: [success, message]

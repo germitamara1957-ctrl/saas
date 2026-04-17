@@ -1,0 +1,27 @@
+kind = "api"
+previewPath = "/api"
+title = "API Server"
+version = "1.0.0"
+id = "3B4_FFSkEVBkAeYMFRJ2e"
+
+[[services]]
+localPort = 8082
+name = "API Server"
+paths = ["/api", "/v1", "/models", "/healthz", "/health", "/docs", "/metrics"]
+
+[services.development]
+run = "pnpm --filter @workspace/api-server run dev"
+
+[services.development.env]
+PORT = "8082"
+
+[services.production]
+build = ["pnpm", "--filter", "@workspace/api-server", "run", "build"]
+run = ["node", "--enable-source-maps", "artifacts/api-server/dist/index.mjs"]
+
+[services.production.env]
+PORT = "8080"
+NODE_ENV = "production"
+
+[services.production.health.startup]
+path = "/healthz"

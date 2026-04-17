@@ -1,0 +1,49 @@
+FROM node:24-slim AS builder
+
+WORKDIR /workspace
+
+RUN npm install -g pnpm@10
+
+COPY pnpm-workspace.yaml ./
+COPY package.json ./
+COPY pnpm-lock.yaml ./
+
+COPY lib/ ./lib/
+COPY artifacts/api-server/ ./artifacts/api-server/
+
+RUN pnpm install --frozen-lockfile --filter @workspace/api-server... 2>/dev/null || \
+    pnpm install --filter @workspace/api-server...
+
+RUN pnpm --filter @workspace/api-server run build
+
+# ── Runtime image ──────────────────────────────────────────────────────────────
+FROM node:24-slim AS runtime
+
+WORKDIR /app
+
+RUN npm install -g pnpm@10
+
+COPY pnpm-workspace.yaml ./
+COPY package.json ./
+COPY pnpm-lock.yaml ./
+COPY lib/db/package.json ./lib/db/
+COPY artifacts/api-server/package.json ./artifacts/api-server/
+
+RUN pnpm install --prod --frozen-lockfile --filter @workspace/api-server... 2>/dev/null || \
+    pnpm install --prod --filter @workspace/api-server
+
+COPY --from=builder /workspace/artifacts/api-server/dist ./artifacts/api-server/dist
+
+# Copy DB migrations so migrate.mjs can apply them at startup
+COPY lib/db/migrations/ ./migrations/
+
+ENV NODE_ENV=production
+ENV PORT=8080
+ENV MIGRATIONS_DIR=/app/migrations
+
+EXPOSE 8080
+
+# Run migrations first, then start the API server
+CMD ["sh", "-c", \
+  "node --enable-source-maps ./artifacts/api-server/dist/migrate.mjs && \
+   node --enable-source-maps ./artifacts/api-server/dist/index.mjs"]

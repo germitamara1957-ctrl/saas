@@ -1,0 +1,17 @@
+**/.git
+**/.gitignore
+**/node_modules
+**/dist
+**/build
+**/.vite
+**/*.log
+**/.env
+**/.env.*
+!**/.env.example
+**/attached_assets
+**/__snapshots__
+**/*.test.ts
+**/coverage
+.local
+DEPLOY.md
+README.md

@@ -1,0 +1,547 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "developers": "Developers",
+    "apiKeys": "API Keys",
+    "analytics": "Analytics",
+    "plans": "Plans",
+    "providers": "AI Providers",
+    "pricing": "Pricing",
+    "usage": "Usage",
+    "docs": "Docs",
+    "auditLog": "Audit Log",
+    "promoCodes": "Promo Codes",
+    "incidents": "Incidents",
+    "organizations": "Organizations",
+    "settings": "Settings"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "add": "Add",
+    "search": "Search",
+    "loading": "Loading...",
+    "active": "Active",
+    "inactive": "Inactive",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "actions": "Actions",
+    "status": "Status",
+    "name": "Name",
+    "email": "Email",
+    "role": "Role",
+    "createdAt": "Created",
+    "yes": "Yes",
+    "no": "No",
+    "confirm": "Confirm",
+    "close": "Close",
+    "back": "Back",
+    "view": "View",
+    "details": "Details",
+    "copy": "Copy",
+    "copied": "Copied!",
+    "or": "or",
+    "noData": "No data found",
+    "error": "An error occurred",
+    "success": "Success",
+    "refresh": "Refresh",
+    "export": "Export",
+    "filter": "Filter",
+    "from": "From",
+    "to": "To",
+    "apply": "Apply",
+    "clear": "Clear",
+    "total": "Total",
+    "page": "Page",
+    "of": "of",
+    "perPage": "per page"
+  },
+  "theme": {
+    "light": "Light",
+    "dark": "Dark",
+    "toggle": "Toggle theme"
+  },
+  "language": {
+    "en": "English",
+    "ar": "العربية"
+  },
+  "auth": {
+    "signIn": "Sign In",
+    "signOut": "Sign Out",
+    "email": "Email",
+    "password": "Password",
+    "adminSignIn": "Admin Sign In",
+    "adminSignInDesc": "Enter your credentials to access the admin console.",
+    "developerSignIn": "Developer Sign In",
+    "developerSignInDesc": "Sign in to access your API keys and usage.",
+    "invalidCredentials": "Invalid credentials",
+    "signInFailed": "Login failed",
+    "noAccount": "Don't have an account?",
+    "signUp": "Sign up",
+    "haveAccount": "Already have an account?",
+    "createAccount": "Create an account",
+    "createAccountDesc": "Sign up to get your API key and start building.",
+    "fullName": "Full Name",
+    "registerFailed": "Registration failed",
+    "registered": "Account created!",
+    "registeredDesc": "Your account is ready. You can now sign in.",
+    "forgotPassword": "Forgot password?",
+    "resetPassword": "Reset Password",
+    "resetPasswordDesc": "Enter your email and we'll send you a reset link.",
+    "sendResetLink": "Send Reset Link",
+    "sending": "Sending...",
+    "checkEmail": "Check your email",
+    "checkEmailDesc": "If an account exists, we've sent a reset link. It expires in 1 hour.",
+    "backToSignIn": "Back to Sign In",
+    "newPassword": "New Password",
+    "confirmPassword": "Confirm Password",
+    "passwordMismatch": "Passwords do not match",
+    "passwordMin": "Must be at least 8 characters",
+    "passwordChanged": "Password changed successfully!",
+    "passwordChangedDesc": "Redirecting you to the sign in page...",
+    "setNewPassword": "Set New Password",
+    "invalidResetLink": "Invalid reset link",
+    "invalidResetLinkDesc": "This link is missing or expired. Please request a new one.",
+    "requestNewLink": "Request New Link"
+  },
+  "admin": {
+    "title": "AI Gateway Admin",
+    "dashboard": {
+      "title": "Dashboard",
+      "totalDevelopers": "Total Developers",
+      "activeKeys": "Active API Keys",
+      "requestsToday": "Requests Today",
+      "costThisMonth": "Revenue This Month",
+      "vsLastMonth": "vs last month",
+      "recentActivity": "Recent Activity"
+    },
+    "developers": {
+      "title": "Developers",
+      "addDeveloper": "Add Developer",
+      "searchPlaceholder": "Search by email or name...",
+      "creditBalance": "Credit Balance",
+      "apiKeys": "API Keys",
+      "totalKeys": "total",
+      "createTitle": "Add Developer",
+      "createDesc": "Create a new developer account and generate their first API key.",
+      "fullName": "Full Name",
+      "tempPassword": "Temporary Password",
+      "initialPlan": "Initial Plan",
+      "selectPlan": "Select a plan",
+      "creating": "Creating...",
+      "createDeveloper": "Create Developer",
+      "developerCreated": "Developer Created",
+      "developerCreatedDesc": "The developer account has been created and an initial API key has been generated.",
+      "apiKeyWarning": "Please copy this key now. It will not be shown again.",
+      "done": "Done",
+      "viewDetails": "View Details",
+      "noResults": "No developers found"
+    },
+    "apiKeys": {
+      "title": "API Keys",
+      "prefix": "Prefix",
+      "plan": "Plan",
+      "balance": "Credit Balance",
+      "lastUsed": "Last Used",
+      "revokedAt": "Revoked",
+      "never": "Never",
+      "revoke": "Revoke",
+      "revokeConfirm": "Are you sure you want to revoke this key?",
+      "revokeDesc": "This action cannot be undone. The developer will lose access immediately.",
+      "noKeys": "No API keys found"
+    },
+    "plans": {
+      "title": "Subscription Plans",
+      "createPlan": "Create Plan",
+      "monthlyCredits": "Monthly Credits",
+      "rateLimit": "Rate Limit (RPM)",
+      "allowedModels": "Allowed Models",
+      "pricePerMonth": "Price/Month",
+      "editPlan": "Edit Plan",
+      "planName": "Plan Name",
+      "description": "Description",
+      "creditsHelp": "Credits allocated per billing period",
+      "rpmHelp": "Max requests per minute",
+      "priceHelp": "0 = free plan",
+      "modelsHelp": "Select which models this plan can access",
+      "creating": "Creating...",
+      "saving": "Saving...",
+      "deletePlan": "Delete Plan",
+      "deleteConfirm": "Are you sure you want to delete this plan?",
+      "deleteDesc": "This may affect existing developers on this plan.",
+      "noPlans": "No plans yet",
+      "free": "Free",
+      "perMonth": "/mo",
+      "textModels": "Text Models",
+      "imageModels": "Image Models",
+      "videoModels": "Video Models",
+      "modelPricing": "Model Pricing"
+    },
+    "providers": {
+      "title": "AI Providers",
+      "addProvider": "Add Provider",
+      "projectId": "Project ID",
+      "region": "Region",
+      "credentials": "Credentials",
+      "noProviders": "No providers configured"
+    },
+    "credits": {
+      "addCredits": "Add Free Credits",
+      "addCreditsDesc": "Add free credits to the developer's account.",
+      "selectKey": "Select API Key",
+      "amount": "Credit Amount",
+      "amountHelp": "Amount to add to the current balance",
+      "adding": "Adding...",
+      "added": "Credits added successfully"
+    },
+    "auditLog": {
+      "title": "Audit Log",
+      "subtitle": "Track all admin actions and security events",
+      "action": "Action",
+      "actor": "Actor",
+      "target": "Target",
+      "details": "Details",
+      "ip": "IP Address",
+      "timestamp": "Timestamp",
+      "noEntries": "No audit log entries found.",
+      "searchPlaceholder": "Search action, email...",
+      "fromDate": "From date",
+      "toDate": "To date",
+      "applyFilters": "Apply Filters",
+      "system": "System"
+    }
+  },
+  "portal": {
+    "title": "Developer Portal",
+    "dashboard": {
+      "title": "Dashboard",
+      "welcome": "Welcome back",
+      "totalBalance": "Total Credit Balance",
+      "requestsMonth": "Requests This Month",
+      "tokensMonth": "Tokens This Month",
+      "myApiKeys": "My API Keys",
+      "gettingStarted": "Getting Started",
+      "noKeys": "No API keys yet"
+    },
+    "usage": {
+      "title": "Usage History",
+      "model": "Model",
+      "tokens": "Tokens",
+      "cost": "Cost",
+      "date": "Date",
+      "noUsage": "No usage history yet"
+    },
+    "settings": {
+      "title": "Account Settings",
+      "subtitle": "Manage your account preferences and security.",
+      "profile": "Profile",
+      "profileDesc": "Your account information",
+      "memberSince": "Member Since",
+      "emailStatus": "Email Status",
+      "verified": "Verified",
+      "notVerified": "Not verified",
+      "dangerZone": "Danger Zone",
+      "dangerZoneDesc": "Irreversible actions — proceed with caution",
+      "deleteAccount": "Delete Account",
+      "deleteAccountDesc": "Permanently delete your account, all API keys, and usage data. This cannot be undone.",
+      "deleteAccountConfirmTitle": "Delete Account Permanently",
+      "deleteAccountConfirmDesc": "This will permanently delete your account, revoke all API keys, and erase your data. This action cannot be undone.",
+      "confirmWithPassword": "Confirm with your password",
+      "typeDeleteToConfirm": "Type DELETE to confirm",
+      "deleting": "Deleting..."
+    }
+  },
+  "landing": {
+    "nav": {
+      "features": "Features",
+      "models": "Models",
+      "howItWorks": "How it works",
+      "pricing": "Pricing",
+      "signIn": "Sign In",
+      "getStarted": "Get Started"
+    },
+    "hero": {
+      "badge": "Powered by Google Vertex AI",
+      "title1": "AI Gateway for",
+      "title2": "Developers & Enterprises",
+      "subtitle": "Instant access to 23+ AI models — Gemini, Grok, DeepSeek, Imagen & Veo — through a single API key. Flexible billing, advanced analytics, multi-tenant management.",
+      "cta": "Get Started Free",
+      "ctaSecondary": "View Documentation",
+      "noCreditCard": "No credit card required",
+      "stat1Value": "23+",
+      "stat1Label": "AI Models",
+      "stat2Value": "99.9%",
+      "stat2Label": "Uptime",
+      "stat3Value": "<100ms",
+      "stat3Label": "Latency",
+      "stat4Value": "1.1×",
+      "stat4Label": "Pricing Markup"
+    },
+    "features": {
+      "title": "Everything you need in one platform",
+      "subtitle": "No more managing multiple API keys or dealing with multiple vendors. Our gateway handles everything.",
+      "items": [
+        {
+          "title": "Unified API Key",
+          "desc": "One key to access all models. No multiple keys, no complex setup."
+        },
+        {
+          "title": "Enterprise-Grade Security",
+          "desc": "AES-256-GCM encryption, email verification, and complete audit log for all actions."
+        },
+        {
+          "title": "Advanced Analytics",
+          "desc": "Interactive charts for requests, tokens, and costs. Filter by model, date, and user."
+        },
+        {
+          "title": "Flexible Billing",
+          "desc": "Prepaid credit system. Pay only for what you use with custom enterprise plans."
+        },
+        {
+          "title": "Rate Limit Control",
+          "desc": "Automatic protection from overuse. Custom RPM limits per plan."
+        },
+        {
+          "title": "Multi-Tenant Support",
+          "desc": "Create developer accounts and assign different roles and plans from one dashboard."
+        }
+      ]
+    },
+    "models": {
+      "title": "Supported Models",
+      "subtitle": "Unified access to the best AI models on the market",
+      "text": "Text & Dialogue Models",
+      "image": "Image Generation Models",
+      "video": "Video Generation Models",
+      "textModels": [
+        "Gemini 2.5 Pro",
+        "Gemini 2.5 Flash",
+        "Grok 4.1 Fast",
+        "Grok 4.1 Thinking",
+        "Mistral Large 3",
+        "Llama 3.3 70B",
+        "DeepSeek R1",
+        "Kimi K2.5"
+      ],
+      "imageModels": [
+        "Imagen 3",
+        "Imagen 3 Fast",
+        "FLUX 1.1 Pro"
+      ],
+      "videoModels": [
+        "Veo 2",
+        "Veo 3"
+      ]
+    },
+    "howItWorks": {
+      "title": "How it works in 3 steps",
+      "subtitle": "Start in minutes, not days",
+      "steps": [
+        {
+          "num": "1",
+          "title": "Create your account",
+          "desc": "Sign up for free and get an instant API key. No complexities, no waiting."
+        },
+        {
+          "num": "2",
+          "title": "Choose your model",
+          "desc": "Pick from 41 AI models: text, images, and video. All through one endpoint."
+        },
+        {
+          "num": "3",
+          "title": "Build and scale",
+          "desc": "Send your first request in a minute. Monitor usage and costs from the dashboard."
+        }
+      ]
+    },
+    "code": {
+      "title": "Ready to integrate in minutes",
+      "subtitle": "Use any programming language with the standard HTTP library"
+    },
+    "plans": {
+      "title": "Plans for every need",
+      "subtitle": "Start free and upgrade when ready. No hidden fees.",
+      "free": {
+        "name": "Free",
+        "price": "$0",
+        "period": "/month",
+        "desc": "Perfect for personal projects and experimentation",
+        "features": [
+          "Access to basic text models",
+          "1,000 requests/month",
+          "10 requests/minute",
+          "Basic dashboard",
+          "Community support"
+        ]
+      },
+      "pro": {
+        "name": "Pro",
+        "price": "$29",
+        "period": "/month",
+        "badge": "Most Popular",
+        "desc": "For developers and small to medium projects",
+        "features": [
+          "All text and image models",
+          "50,000 requests/month",
+          "60 requests/minute",
+          "Advanced analytics",
+          "Email support",
+          "Low credit notifications"
+        ]
+      },
+      "enterprise": {
+        "name": "Enterprise",
+        "price": "Contact us",
+        "period": "",
+        "desc": "For large companies with custom requirements",
+        "features": [
+          "All models including video",
+          "Unlimited requests",
+          "Custom rate limits",
+          "99.9% uptime SLA",
+          "Dedicated 24/7 support",
+          "Private deployment available"
+        ]
+      },
+      "cta": "Get Started",
+      "ctaEnterprise": "Contact Sales",
+      "popular": "Most Popular"
+    },
+    "cta": {
+      "title": "Ready to get started?",
+      "subtitle": "Join developers building with AI. Free account in seconds.",
+      "button": "Create your free account",
+      "buttonSecondary": "Sign In"
+    },
+    "footer": {
+      "tagline": "AI Gateway for developers and enterprises",
+      "portal": "Developer Portal",
+      "admin": "Admin Panel",
+      "rights": "All rights reserved"
+    }
+  },
+  "promoCodes": {
+    "title": "Promo Codes",
+    "subtitle": "Create promotional codes to grant free credits to users",
+    "createCode": "Create Code",
+    "editCode": "Edit Code",
+    "code": "Code",
+    "creditsAmount": "Credits Amount (USD)",
+    "maxUses": "Max Uses",
+    "usedCount": "Times Used",
+    "expiresAt": "Expires At",
+    "note": "Note",
+    "noExpiry": "No expiry",
+    "noCodes": "No promo codes yet",
+    "codePlaceholder": "e.g. WELCOME50",
+    "notePlaceholder": "Internal note (optional)",
+    "usage": "{{used}} of {{max}}",
+    "exhausted": "Exhausted",
+    "expired": "Expired",
+    "deleteConfirm": "Are you sure you want to delete this code?",
+    "redeemTitle": "Have a promo code?",
+    "redeemDescription": "Enter a code to add free credits to your account",
+    "redeemPlaceholder": "Enter promo code",
+    "redeemButton": "Redeem",
+    "redeemSuccess": "Success! ${{credits}} added to your balance",
+    "errors": {
+      "invalid_code": "Invalid promo code",
+      "code_inactive": "This code is no longer active",
+      "code_expired": "This code has expired",
+      "code_exhausted": "This code has reached its usage limit",
+      "already_used": "You have already used this code"
+    }
+  },
+  "models": {
+    "text": "Text",
+    "image": "Image",
+    "video": "Video",
+    "embedding": "Embedding",
+    "pricingInput": "Input",
+    "pricingOutput": "Output",
+    "pricingThinking": "Thinking",
+    "pricingPerImage": "Per Image",
+    "pricingPerSecond": "Per Second",
+    "per1M": "per 1M tokens",
+    "new": "New",
+    "preview": "Preview",
+    "audio": "Audio",
+    "inpainting": "Inpainting"
+  },
+  "status": {
+    "title": "System Status",
+    "lastChecked": "Last checked",
+    "uptime24h": "Uptime (24h)",
+    "uptime7d": "Uptime (7d)",
+    "uptime30d": "Uptime (30d)",
+    "activeIncidents": "Active Incidents",
+    "recentIncidents": "Recent Incidents",
+    "noActiveIncidents": "All systems operational. No active incidents.",
+    "noRecentIncidents": "No incidents reported in the last 30 days.",
+    "overall": {
+      "operational": "All Systems Operational",
+      "degraded": "Degraded Performance",
+      "major_outage": "Major Outage",
+      "unknown": "Status Unknown"
+    },
+    "severity": {
+      "minor": "Minor",
+      "major": "Major",
+      "critical": "Critical",
+      "maintenance": "Maintenance"
+    },
+    "statusValues": {
+      "investigating": "Investigating",
+      "identified": "Identified",
+      "monitoring": "Monitoring",
+      "resolved": "Resolved"
+    }
+  },
+  "incidents": {
+    "title": "Incidents",
+    "subtitle": "Manage status page incidents",
+    "all": "All Incidents",
+    "new": "New Incident",
+    "edit": "Edit Incident",
+    "titleEn": "Title (English)",
+    "titleAr": "Title (Arabic)",
+    "bodyEn": "Description (English)",
+    "bodyAr": "Description (Arabic)",
+    "status": "Status",
+    "severity": "Severity"
+  },
+  "orgs": {
+    "title": "Organizations",
+    "subtitle": "Manage your teams and shared workspaces",
+    "mine": "My Organizations",
+    "create": "Create Organization",
+    "name": "Organization Name",
+    "empty": "You don't belong to any organization yet. Create one to get started.",
+    "members": "Members",
+    "pendingInvites": "Pending Invites",
+    "noPendingInvites": "No pending invites.",
+    "expires": "expires",
+    "rename": "Rename",
+    "delete": "Delete Organization",
+    "confirmDelete": "Are you sure? This will permanently delete the organization and all its data.",
+    "dangerZone": "Danger Zone",
+    "role": {
+      "label": "Role",
+      "owner": "Owner",
+      "admin": "Admin",
+      "developer": "Developer",
+      "viewer": "Viewer"
+    },
+    "invite": {
+      "button": "Invite Member",
+      "send": "Send Invite",
+      "sent": "Invitation sent",
+      "acceptTitle": "Accept Organization Invite",
+      "acceptDesc": "You've been invited to join an organization. Click below to accept.",
+      "accept": "Accept Invite"
+    }
+  }
+}

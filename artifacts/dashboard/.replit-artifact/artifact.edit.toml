@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "AI Gateway Dashboard"
+version = "1.0.0"
+id = "artifacts/dashboard"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23183
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/dashboard", "run", "build" ]
+publicDir = "artifacts/dashboard/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23183"
+BASE_PATH = "/"
