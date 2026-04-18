@@ -171,7 +171,7 @@ router.get("/admin/billing/chargily/secrets", async (req, res): Promise<void> =>
   const status = await getChargilySecretsStatus();
   res.json({
     ...status,
-    webhookUrl: buildWebhookUrl(req),
+    webhookUrl: await buildWebhookUrl(req),
   });
 });
 
@@ -238,7 +238,7 @@ router.put("/admin/billing/chargily/secrets", async (req, res): Promise<void> =>
   });
 
   const status = await getChargilySecretsStatus();
-  res.json({ ...status, webhookUrl: buildWebhookUrl(req) });
+  res.json({ ...status, webhookUrl: await buildWebhookUrl(req) });
 });
 
 export default router;
