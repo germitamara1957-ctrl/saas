@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { Link } from "wouter";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   useListPortalPlans,
@@ -16,7 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   CheckCircle2, Zap, Image, Video, Text, ArrowUpCircle,
-  Crown, AlertCircle, Key, Copy, MessageCircle, Loader2, RefreshCw,
+  Crown, AlertCircle, Key, Copy, MessageCircle, Loader2, RefreshCw, Wallet,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { MODELS } from "@/lib/models";
@@ -72,6 +73,16 @@ export default function PortalPlans() {
   const [enrollingPlanId, setEnrollingPlanId] = useState<number | null>(null);
   const [newKeyInfo, setNewKeyInfo] = useState<EnrollResult | null>(null);
   const [keyCopied, setKeyCopied] = useState(false);
+  const [chargilyEnabled, setChargilyEnabled] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    authFetch("/api/portal/billing/config")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((cfg) => { if (!cancelled && cfg) setChargilyEnabled(Boolean(cfg.enabled)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const activePlans = (plans ?? []).filter(p => p.isActive).sort((a, b) => a.priceUsd - b.priceUsd);
 
@@ -322,15 +333,25 @@ export default function PortalPlans() {
                       }
                     </Button>
                   ) : (
-                    /* Paid plans → WhatsApp */
-                    <Button
-                      className="w-full bg-[#25D366] hover:bg-[#1ebe5d] text-white border-0"
-                      asChild
-                    >
-                      <a href={whatsappUrl(plan.name, plan.priceUsd)} target="_blank" rel="noopener noreferrer">
-                        <MessageCircle className="h-4 w-4 mr-2" /> Contact via WhatsApp
-                      </a>
-                    </Button>
+                    /* Paid plans → Chargily Top up (if enabled) + WhatsApp */
+                    <>
+                      {chargilyEnabled && (
+                        <Button className="w-full" asChild>
+                          <Link href="/portal/billing">
+                            <Wallet className="h-4 w-4 mr-2" /> Top up Credits (DZD)
+                          </Link>
+                        </Button>
+                      )}
+                      <Button
+                        className="w-full bg-[#25D366] hover:bg-[#1ebe5d] text-white border-0"
+                        variant={chargilyEnabled ? "outline" : "default"}
+                        asChild
+                      >
+                        <a href={whatsappUrl(plan.name, plan.priceUsd)} target="_blank" rel="noopener noreferrer">
+                          <MessageCircle className="h-4 w-4 mr-2" /> Contact via WhatsApp
+                        </a>
+                      </Button>
+                    </>
                   )}
                 </div>
               </CardContent>

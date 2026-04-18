@@ -15,6 +15,7 @@ interface BillingConfig {
   maxTopupDzd: number;
   mode: "test" | "live";
   currency: string;
+  enabled: boolean;
 }
 
 interface PaymentIntent {
@@ -57,8 +58,8 @@ export default function PortalBilling() {
     (async () => {
       try {
         const [cfgRes, intentsRes] = await Promise.all([
-          authFetch("/portal/billing/config"),
-          authFetch("/portal/billing/intents"),
+          authFetch("/api/portal/billing/config"),
+          authFetch("/api/portal/billing/intents"),
         ]);
         if (!cfgRes.ok) throw new Error(`Config HTTP ${cfgRes.status}`);
         if (!intentsRes.ok) throw new Error(`Intents HTTP ${intentsRes.status}`);
@@ -96,7 +97,7 @@ export default function PortalBilling() {
     if (validationError || !config) return;
     setSubmitting(true);
     try {
-      const res = await authFetch("/portal/billing/topup", {
+      const res = await authFetch("/api/portal/billing/topup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amountDzd: Math.round(amount) }),

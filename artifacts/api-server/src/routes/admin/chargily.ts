@@ -10,7 +10,7 @@ import {
   CHARGILY_SECRET_KEY_SETTING,
   CHARGILY_WEBHOOK_SECRET_SETTING,
 } from "../../lib/chargily";
-import { getChargilySettings } from "../../lib/chargilySettings";
+import { getChargilySettings, CHARGILY_ENABLED_SETTING } from "../../lib/chargilySettings";
 import { encryptApiKey } from "../../lib/crypto";
 import { getSettingValue } from "./settings";
 import { logger } from "../../lib/logger";
@@ -110,6 +110,20 @@ router.post("/admin/billing/chargily/settings", async (req, res): Promise<void> 
   if (!pick("chargily_dzd_to_usd_rate", dzdToUsdRate, "dzdToUsdRate", 50, 1000)) return;
   if (!pick("chargily_min_topup_dzd", minTopupDzd, "minTopupDzd", 100, 100_000)) return;
   if (!pick("chargily_max_topup_dzd", maxTopupDzd, "maxTopupDzd", 1000, 10_000_000)) return;
+
+  // Optional `enabled` toggle — accepts boolean or the string "true"/"false".
+  const enabledRaw = (req.body as { enabled?: unknown }).enabled;
+  if (enabledRaw !== undefined) {
+    const truthy =
+      enabledRaw === true || enabledRaw === "true" || enabledRaw === 1 || enabledRaw === "1";
+    const falsy =
+      enabledRaw === false || enabledRaw === "false" || enabledRaw === 0 || enabledRaw === "0";
+    if (!truthy && !falsy) {
+      res.status(400).json({ error: "enabled must be a boolean" });
+      return;
+    }
+    updates.push({ key: CHARGILY_ENABLED_SETTING, value: truthy ? "true" : "false" });
+  }
 
   for (const { key, value } of updates) {
     await db

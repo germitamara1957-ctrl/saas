@@ -20,6 +20,7 @@ router.get("/portal/billing/config", async (_req, res): Promise<void> => {
     maxTopupDzd: settings.maxTopupDzd,
     mode: settings.mode,
     currency: "dzd",
+    enabled: settings.enabled,
   });
 });
 
@@ -39,6 +40,10 @@ router.post("/portal/billing/topup", async (req, res): Promise<void> => {
   }
 
   const settings = await getChargilySettings();
+  if (!settings.enabled) {
+    res.status(403).json({ error: "Top-ups are currently disabled by the administrator" });
+    return;
+  }
   if (amount < settings.minTopupDzd) {
     res.status(400).json({ error: `Minimum top-up is ${settings.minTopupDzd} DZD` });
     return;

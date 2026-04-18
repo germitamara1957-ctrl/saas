@@ -4,7 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Save, Mail, CheckCircle2, Send, Globe, Video, Plus, Trash2, ShieldCheck, KeyRound, Copy, Webhook } from "lucide-react";
+import { Loader2, Save, Mail, CheckCircle2, Send, Globe, Video, Plus, Trash2, ShieldCheck, KeyRound, Copy, Webhook, Power } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 interface DocsVideo {
   title: string;
@@ -469,21 +470,56 @@ function ChargilySecretsCard() {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [togglingEnabled, setTogglingEnabled] = useState(false);
   const [state, setState] = useState<ChargilySecretsState | null>(null);
+  const [enabled, setEnabled] = useState<boolean>(true);
   const [secretKey, setSecretKey] = useState("");
   const [webhookSecret, setWebhookSecret] = useState("");
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/admin/billing/chargily/secrets`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load");
-      const data = (await res.json()) as ChargilySecretsState;
+      const [secretsRes, settingsRes] = await Promise.all([
+        fetch(`${API_BASE}/api/admin/billing/chargily/secrets`, { credentials: "include" }),
+        fetch(`${API_BASE}/api/admin/billing/chargily/settings`, { credentials: "include" }),
+      ]);
+      if (!secretsRes.ok) throw new Error("Failed to load");
+      const data = (await secretsRes.json()) as ChargilySecretsState;
       setState(data);
+      if (settingsRes.ok) {
+        const s = (await settingsRes.json()) as { enabled?: boolean };
+        setEnabled(s.enabled !== false);
+      }
     } catch {
       toast({ title: "Error", description: "Could not load Chargily settings", variant: "destructive" });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleToggleEnabled = async (checked: boolean) => {
+    setTogglingEnabled(true);
+    const prev = enabled;
+    setEnabled(checked);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/billing/chargily/settings`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: checked }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast({
+        title: checked ? "Top-ups enabled" : "Top-ups disabled",
+        description: checked
+          ? "Users can now pay via Chargily."
+          : "Chargily top-ups are now blocked. Existing pending checkouts can still be paid.",
+      });
+    } catch {
+      setEnabled(prev);
+      toast({ title: "Error", description: "Failed to update", variant: "destructive" });
+    } finally {
+      setTogglingEnabled(false);
     }
   };
 
@@ -561,6 +597,28 @@ function ChargilySecretsCard() {
           </div>
         ) : state ? (
           <>
+            <div className="rounded-md border bg-muted/30 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Power className={`h-4 w-4 ${enabled ? "text-green-600" : "text-muted-foreground"}`} />
+                  <div>
+                    <div className="text-sm font-medium">
+                      {enabled ? "Top-ups enabled" : "Top-ups disabled"}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Master switch — disable to immediately stop new payments without removing keys.
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={enabled}
+                  onCheckedChange={handleToggleEnabled}
+                  disabled={togglingEnabled}
+                  data-testid="switch-chargily-enabled"
+                />
+              </div>
+            </div>
+
             <div className="rounded-md border bg-muted/30 p-3 text-sm">
               <div className="flex items-center justify-between">
                 <span className="font-medium">Mode</span>
