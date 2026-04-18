@@ -1,10 +1,10 @@
-import { pgTable, serial, text, integer, boolean, timestamp, doublePrecision, index, unique } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, timestamp, numeric, index, unique } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 
 export const promoCodesTable = pgTable("promo_codes", {
   id: serial("id").primaryKey(),
   code: text("code").notNull().unique(),
-  creditsAmount: doublePrecision("credits_amount").notNull(),
+  creditsAmount: numeric("credits_amount", { precision: 18, scale: 8, mode: "number" }).notNull(),
   maxUses: integer("max_uses").notNull().default(1),
   usedCount: integer("used_count").notNull().default(0),
   expiresAt: timestamp("expires_at", { withTimezone: true }),

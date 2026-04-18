@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, timestamp, doublePrecision, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, numeric, primaryKey, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { usersTable } from "./users";
 
@@ -7,11 +7,11 @@ export const organizationsTable = pgTable("organizations", {
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
   ownerId: integer("owner_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
-  creditBalance: doublePrecision("credit_balance").notNull().default(0),
-  topupCreditBalance: doublePrecision("topup_credit_balance").notNull().default(0),
+  creditBalance: numeric("credit_balance", { precision: 18, scale: 8, mode: "number" }).notNull().default(0),
+  topupCreditBalance: numeric("topup_credit_balance", { precision: 18, scale: 8, mode: "number" }).notNull().default(0),
   // Optional org-level spend caps. NULL = no cap. Independent from per-user/per-key caps.
-  dailySpendLimitUsd: doublePrecision("daily_spend_limit_usd"),
-  monthlySpendLimitUsd: doublePrecision("monthly_spend_limit_usd"),
+  dailySpendLimitUsd: numeric("daily_spend_limit_usd", { precision: 18, scale: 8, mode: "number" }),
+  monthlySpendLimitUsd: numeric("monthly_spend_limit_usd", { precision: 18, scale: 8, mode: "number" }),
   // Subscription period window (parallel to users). When `current_period_end`
   // is in the past the org's `creditBalance` (subscription credit) cannot be
   // used for plan-exclusive models — only `topupCreditBalance` works.

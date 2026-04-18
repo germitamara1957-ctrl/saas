@@ -192,6 +192,8 @@ Includes a full admin dashboard and a developer self-service portal, with Arabic
 ## Architecture Notes
 
 - **Billing**: `MODEL_COSTS` in billing.ts is the hardcoded fallback. DB table `model_costs` overrides these. A 5-minute in-memory cache reduces DB reads. MARKUP_FACTOR = 1.1 applied at billing time.
+- **Money columns**: All USD/credit columns use `numeric(18, 8)` with drizzle `mode: "number"` (exact decimal storage in Postgres, JS `number` in app). Exceptions kept as `doublePrecision`: `users.spend_alert_threshold` (ratio 0..1) and `rate_limit_buckets_v2.tokens` (counter). Migration `0007_financial_numeric_precision.sql` converts existing schemas in-place.
+- **Encryption**: `ENCRYPTION_KEY` is REQUIRED (no fallback). `crypto.ts` fails fast at module load. `JWT_SECRET` is consulted ONLY as a backward-compat decryption key for legacy ciphertext; new encryptions always use `ENCRYPTION_KEY`.
 - **Model routing**: Only 23 live models have Vertex AI routing in vertexai.ts. The 19 `comingSoon` models exist in models.ts (dashboard display) but have no API routes — requests to them return 404.
 - **Multimodal**: `ChatMessage.content` accepts `string | ContentPart[]`. ContentPart = `{ type:"text", text }` or `{ type:"image", mimeType, base64 }`. Gemini REST and SDK paths both handle image inlineData. OpenAI-compat models receive text-only (images silently stripped).
 - **Webhooks**: HMAC-SHA256 signed. Signature in `X-Gateway-Signature: sha256=<hex>`. Events: `usage.success`, `usage.error`, `usage.rejected`, `low_balance`. Empty `events[]` = subscribe to all. Fire-and-forget (8s timeout per request).

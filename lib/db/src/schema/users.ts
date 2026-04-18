@@ -1,4 +1,4 @@
-import { pgTable, serial, text, boolean, timestamp, doublePrecision, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, timestamp, doublePrecision, numeric, integer, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { plansTable } from "./plans";
@@ -10,8 +10,8 @@ export const usersTable = pgTable("users", {
   name: text("name").notNull(),
   role: text("role").notNull().default("developer"),
   isActive: boolean("is_active").notNull().default(true),
-  creditBalance: doublePrecision("credit_balance").notNull().default(0),
-  topupCreditBalance: doublePrecision("topup_credit_balance").notNull().default(0),
+  creditBalance: numeric("credit_balance", { precision: 18, scale: 8, mode: "number" }).notNull().default(0),
+  topupCreditBalance: numeric("topup_credit_balance", { precision: 18, scale: 8, mode: "number" }).notNull().default(0),
   emailVerified: boolean("email_verified").notNull().default(false),
   emailVerificationToken: text("email_verification_token"),
   emailVerificationTokenExpiresAt: timestamp("email_verification_token_expires_at", { withTimezone: true }),
@@ -31,8 +31,8 @@ export const usersTable = pgTable("users", {
   totpSecret: text("totp_secret"),
   totpEnabled: boolean("totp_enabled").notNull().default(false),
   // Spending limits (USD). null = no limit. Threshold is 0..1 (e.g. 0.8 = alert at 80%).
-  dailySpendLimitUsd: doublePrecision("daily_spend_limit_usd"),
-  monthlySpendLimitUsd: doublePrecision("monthly_spend_limit_usd"),
+  dailySpendLimitUsd: numeric("daily_spend_limit_usd", { precision: 18, scale: 8, mode: "number" }),
+  monthlySpendLimitUsd: numeric("monthly_spend_limit_usd", { precision: 18, scale: 8, mode: "number" }),
   spendAlertThreshold: doublePrecision("spend_alert_threshold").notNull().default(0.8),
   spendAlertEmailSentAt: timestamp("spend_alert_email_sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

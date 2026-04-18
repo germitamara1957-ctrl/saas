@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, timestamp, doublePrecision, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, boolean, timestamp, numeric, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { usersTable } from "./users";
@@ -14,11 +14,11 @@ export const apiKeysTable = pgTable("api_keys", {
   keyHash: text("key_hash").notNull().unique(),
   keyEncrypted: text("key_encrypted"),
   name: text("name"),
-  creditBalance: doublePrecision("credit_balance").notNull().default(0),
+  creditBalance: numeric("credit_balance", { precision: 18, scale: 8, mode: "number" }).notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
   // Per-key overrides (null = inherit from plan / no cap)
   rpmLimit: integer("rpm_limit"),
-  monthlySpendLimitUsd: doublePrecision("monthly_spend_limit_usd"),
+  monthlySpendLimitUsd: numeric("monthly_spend_limit_usd", { precision: 18, scale: 8, mode: "number" }),
   lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   // Optional grace-period expiration set during key rotation. When the user

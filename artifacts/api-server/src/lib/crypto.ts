@@ -1,5 +1,11 @@
 import crypto from "crypto";
 
+// Fail-fast at module load time so the server never starts without the key.
+// Tests provide ENCRYPTION_KEY via setup; never silently fall back to JWT_SECRET.
+if (!process.env.ENCRYPTION_KEY) {
+  throw new Error("ENCRYPTION_KEY environment variable is required");
+}
+
 const CIPHER_ALGORITHM = "aes-256-gcm";
 
 const SCRYPT_N_LEGACY = 16384;
@@ -14,23 +20,22 @@ const SCRYPT_N_CURRENT =
 /**
  * Returns the primary encryption key derived from ENCRYPTION_KEY env var.
  * This key is used for ALL new encryptions.
+ *
+ * ENCRYPTION_KEY is REQUIRED — there is no fallback for new encryptions.
+ * (For backward-compatible decryption of legacy data, see `getLegacyKey()`.)
  */
 function getPrimaryKey(): Buffer {
   const encKey = process.env.ENCRYPTION_KEY;
-  if (encKey) {
-    return crypto.createHash("sha256").update(encKey).digest();
+  if (!encKey) {
+    throw new Error("ENCRYPTION_KEY environment variable is required for encryption");
   }
-  // Fallback: derive from JWT_SECRET (legacy behaviour, used when ENCRYPTION_KEY is not set)
-  const jwtSecret = process.env.JWT_SECRET;
-  if (!jwtSecret) {
-    throw new Error("Either ENCRYPTION_KEY or JWT_SECRET environment variable is required for encryption");
-  }
-  return crypto.createHash("sha256").update(jwtSecret).digest();
+  return crypto.createHash("sha256").update(encKey).digest();
 }
 
 /**
  * Returns the legacy key derived from JWT_SECRET only.
- * Used as a fallback during decryption for data encrypted before ENCRYPTION_KEY was introduced.
+ * Used as a fallback during DECRYPTION ONLY for data encrypted before
+ * ENCRYPTION_KEY was introduced. Never used for new encryptions.
  */
 function getLegacyKey(): Buffer | null {
   const jwtSecret = process.env.JWT_SECRET;
@@ -73,13 +78,11 @@ export function decryptApiKey(encryptedData: string): string | null {
   const result = tryDecrypt(primary, ivHex, encryptedHex, authTagHex);
   if (result !== null) return result;
 
-  // If ENCRYPTION_KEY is set, also try JWT_SECRET for backward compatibility
-  // (data encrypted before ENCRYPTION_KEY was introduced)
-  if (process.env.ENCRYPTION_KEY) {
-    const legacy = getLegacyKey();
-    if (legacy) {
-      return tryDecrypt(legacy, ivHex, encryptedHex, authTagHex);
-    }
+  // Backward compatibility: try JWT_SECRET for data encrypted before
+  // ENCRYPTION_KEY was introduced.
+  const legacy = getLegacyKey();
+  if (legacy) {
+    return tryDecrypt(legacy, ivHex, encryptedHex, authTagHex);
   }
 
   return null;
