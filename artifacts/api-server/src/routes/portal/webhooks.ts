@@ -3,6 +3,7 @@ import { eq, and } from "drizzle-orm";
 import crypto from "crypto";
 import { db, webhooksTable, usersTable, plansTable } from "@workspace/db";
 import { sendSingleWebhook, type WebhookPayload } from "../../lib/webhookDispatcher";
+import { assertSafePublicUrl, SsrfBlockedError } from "../../lib/ssrfGuard";
 
 const router: IRouter = Router();
 
@@ -28,9 +29,14 @@ router.post("/portal/webhooks", async (req, res): Promise<void> => {
     res.status(400).json({ error: "url is required" });
     return;
   }
-  try { new URL(url); } catch {
-    res.status(400).json({ error: "url must be a valid URL" });
-    return;
+  try {
+    await assertSafePublicUrl(url);
+  } catch (err) {
+    if (err instanceof SsrfBlockedError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    throw err;
   }
 
   const eventsArr: string[] = Array.isArray(events) ? events.filter((e): e is string => typeof e === "string") : [];
@@ -90,7 +96,12 @@ router.put("/portal/webhooks/:id", async (req, res): Promise<void> => {
   }
   if (url !== undefined) {
     if (typeof url !== "string") { res.status(400).json({ error: "url must be a string" }); return; }
-    try { new URL(url); } catch { res.status(400).json({ error: "url must be a valid URL" }); return; }
+    try {
+      await assertSafePublicUrl(url);
+    } catch (err) {
+      if (err instanceof SsrfBlockedError) { res.status(400).json({ error: err.message }); return; }
+      throw err;
+    }
     updates.url = url;
   }
   if (events !== undefined) {

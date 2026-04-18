@@ -32,6 +32,7 @@ export const apiKeysTable = pgTable("api_keys", {
   index("api_keys_key_hash_idx").on(table.keyHash),
   index("api_keys_is_active_idx").on(table.isActive),
   index("api_keys_plan_id_idx").on(table.planId),
+  index("api_keys_organization_id_idx").on(table.organizationId),
 ]);
 
 export const insertApiKeySchema = createInsertSchema(apiKeysTable).omit({

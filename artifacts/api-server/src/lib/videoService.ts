@@ -7,7 +7,7 @@
 import type { Response } from "express";
 import { createHash } from "crypto";
 import { eq, sql, and } from "drizzle-orm";
-import { db, usersTable, usageLogsTable } from "@workspace/db";
+import { db, usersTable, usageLogsTable, organizationsTable } from "@workspace/db";
 import type { ApiKeyWithRelations } from "../middlewares/apiKeyAuth";
 import { checkRateLimit } from "./rateLimit";
 import { generateVideoWithVeo, getVideoJobStatus, normalizeToPlanModelId } from "./vertexai";
@@ -83,6 +83,11 @@ export async function waitForVideo(operationName: string, timeoutMs: number, pol
 /**
  * Atomically refund a failed video job.
  * Top-up is used because it works universally (any model).
+ *
+ * The refund target is derived from the original usage log row: if
+ * `organizationId` was stamped at debit time, refund the organization;
+ * otherwise refund the user. This guarantees the refund lands on the
+ * SAME ledger that was originally charged — preventing tenant leakage.
  */
 export async function refundFailedVideoJob(
   jobId: string,
@@ -99,13 +104,23 @@ export async function refundFailedVideoJob(
         eq(usageLogsTable.apiKeyId, apiKeyId),
         eq(usageLogsTable.status, "success"),
       ))
-      .returning({ costUsd: usageLogsTable.costUsd });
+      .returning({
+        costUsd: usageLogsTable.costUsd,
+        organizationId: usageLogsTable.organizationId,
+      });
     if (!claimed || claimed.costUsd <= 0) return { refunded: false, amount: 0 };
 
-    await tx
-      .update(usersTable)
-      .set({ topupCreditBalance: sql`${usersTable.topupCreditBalance} + ${claimed.costUsd}` })
-      .where(eq(usersTable.id, userId));
+    if (claimed.organizationId !== null) {
+      await tx
+        .update(organizationsTable)
+        .set({ topupCreditBalance: sql`${organizationsTable.topupCreditBalance} + ${claimed.costUsd}` })
+        .where(eq(organizationsTable.id, claimed.organizationId));
+    } else {
+      await tx
+        .update(usersTable)
+        .set({ topupCreditBalance: sql`${usersTable.topupCreditBalance} + ${claimed.costUsd}` })
+        .where(eq(usersTable.id, userId));
+    }
     return { refunded: true, amount: claimed.costUsd };
   });
 }
@@ -160,6 +175,11 @@ export async function createVideoJob(args: CreateVideoArgs): Promise<CreateVideo
     };
   }
 
+  // Resolve billing target (user or org). All usage_logs writes stamp the
+  // org id when applicable so refunds and analytics target the right ledger.
+  const billingTarget = apiKey.billingTarget;
+  const orgIdForLogs: number | null = billingTarget.targetType === "org" ? billingTarget.id : null;
+
   // Plan + credit check
   const allowed = apiKey.plan.modelsAllowed;
   const planModel = normalizeToPlanModelId(model);
@@ -168,7 +188,7 @@ export async function createVideoJob(args: CreateVideoArgs): Promise<CreateVideo
     const errMsg = `Model "${model}" is not in your plan ("${apiKey.plan.name}"). ` +
       `Use top-up credit or upgrade your plan. Plan models: ${allowed.join(", ")}`;
     await db.insert(usageLogsTable).values({
-      apiKeyId: apiKey.id, model, inputTokens: 0, outputTokens: 0,
+      apiKeyId: apiKey.id, organizationId: orgIdForLogs, model, inputTokens: 0, outputTokens: 0,
       totalTokens: 0, costUsd: 0, requestId, status: "rejected", errorMessage: errMsg,
     });
     return { ok: false, status: 403, error: errMsg };
@@ -181,7 +201,7 @@ export async function createVideoJob(args: CreateVideoArgs): Promise<CreateVideo
   if (!withinLimit) {
     const errMsg = `Rate limit exceeded for video group. Your account allows ${rpm} requests per minute.`;
     await db.insert(usageLogsTable).values({
-      apiKeyId: apiKey.id, model, inputTokens: 0, outputTokens: 0,
+      apiKeyId: apiKey.id, organizationId: orgIdForLogs, model, inputTokens: 0, outputTokens: 0,
       totalTokens: 0, costUsd: 0, requestId, status: "rejected", errorMessage: errMsg,
     });
     return { ok: false, status: 429, error: errMsg };
@@ -194,7 +214,7 @@ export async function createVideoJob(args: CreateVideoArgs): Promise<CreateVideo
       ? "Insufficient credits for this request."
       : `Insufficient top-up credit for out-of-plan model "${model}".`;
     await db.insert(usageLogsTable).values({
-      apiKeyId: apiKey.id, model, inputTokens: 0, outputTokens: 0,
+      apiKeyId: apiKey.id, organizationId: orgIdForLogs, model, inputTokens: 0, outputTokens: 0,
       totalTokens: 0, costUsd: 0, requestId, status: "rejected", errorMessage: errMsg,
     });
     return { ok: false, status: 402, error: errMsg };
@@ -207,35 +227,68 @@ export async function createVideoJob(args: CreateVideoArgs): Promise<CreateVideo
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
     await db.insert(usageLogsTable).values({
-      apiKeyId: apiKey.id, model, inputTokens: 0, outputTokens: 0,
+      apiKeyId: apiKey.id, organizationId: orgIdForLogs, model, inputTokens: 0, outputTokens: 0,
       totalTokens: 0, costUsd: 0, requestId, jobOperationId: null, status: "error", errorMessage,
     });
     return { ok: false, status: 502, error: `Veo API error: ${errorMessage}` };
   }
 
-  // Atomically deduct + log in a single transaction (split-balance logic)
+  // Atomically deduct + log in a single transaction (split-balance logic).
+  // If the API key is org-bound, debit the organization pool; otherwise
+  // debit the user. The usage_logs row is stamped with the same target.
   let sufficient = true;
   await db.transaction(async (tx) => {
-    const [deducted] = modelInPlan
-      ? await tx
-          .update(usersTable)
-          .set({
-            creditBalance: sql`GREATEST(${usersTable.creditBalance} - ${costUsd}, 0)`,
-            topupCreditBalance: sql`${usersTable.topupCreditBalance} - GREATEST(${costUsd} - ${usersTable.creditBalance}, 0)`,
-          })
-          .where(and(eq(usersTable.id, apiKey.userId), sql`(${usersTable.creditBalance} + ${usersTable.topupCreditBalance}) >= ${costUsd}`))
-          .returning({ creditBalance: usersTable.creditBalance })
-      : await tx
-          .update(usersTable)
-          .set({ topupCreditBalance: sql`${usersTable.topupCreditBalance} - ${costUsd}` })
-          .where(and(eq(usersTable.id, apiKey.userId), sql`${usersTable.topupCreditBalance} >= ${costUsd}`))
-          .returning({ creditBalance: usersTable.creditBalance });
+    let deductedRow;
+    if (billingTarget.targetType === "org") {
+      const orgId = billingTarget.id;
+      deductedRow = modelInPlan
+        ? (await tx
+            .update(organizationsTable)
+            .set({
+              creditBalance: sql`GREATEST(${organizationsTable.creditBalance} - ${costUsd}, 0)`,
+              topupCreditBalance: sql`${organizationsTable.topupCreditBalance} - GREATEST(${costUsd} - ${organizationsTable.creditBalance}, 0)`,
+            })
+            .where(and(
+              eq(organizationsTable.id, orgId),
+              sql`(${organizationsTable.creditBalance} + ${organizationsTable.topupCreditBalance}) >= ${costUsd}`,
+            ))
+            .returning({ id: organizationsTable.id }))[0]
+        : (await tx
+            .update(organizationsTable)
+            .set({ topupCreditBalance: sql`${organizationsTable.topupCreditBalance} - ${costUsd}` })
+            .where(and(
+              eq(organizationsTable.id, orgId),
+              sql`${organizationsTable.topupCreditBalance} >= ${costUsd}`,
+            ))
+            .returning({ id: organizationsTable.id }))[0];
+    } else {
+      deductedRow = modelInPlan
+        ? (await tx
+            .update(usersTable)
+            .set({
+              creditBalance: sql`GREATEST(${usersTable.creditBalance} - ${costUsd}, 0)`,
+              topupCreditBalance: sql`${usersTable.topupCreditBalance} - GREATEST(${costUsd} - ${usersTable.creditBalance}, 0)`,
+            })
+            .where(and(
+              eq(usersTable.id, apiKey.userId),
+              sql`(${usersTable.creditBalance} + ${usersTable.topupCreditBalance}) >= ${costUsd}`,
+            ))
+            .returning({ id: usersTable.id }))[0]
+        : (await tx
+            .update(usersTable)
+            .set({ topupCreditBalance: sql`${usersTable.topupCreditBalance} - ${costUsd}` })
+            .where(and(
+              eq(usersTable.id, apiKey.userId),
+              sql`${usersTable.topupCreditBalance} >= ${costUsd}`,
+            ))
+            .returning({ id: usersTable.id }))[0];
+    }
 
-    if (!deducted) {
+    if (!deductedRow) {
       sufficient = false;
       await tx.insert(usageLogsTable).values({
-        apiKeyId: apiKey.id, model, inputTokens: 0, outputTokens: durationSeconds,
-        totalTokens: durationSeconds, costUsd: 0, requestId,
+        apiKeyId: apiKey.id, organizationId: orgIdForLogs, model, inputTokens: 0,
+        outputTokens: durationSeconds, totalTokens: durationSeconds, costUsd: 0, requestId,
         jobOperationId: jobResult.operationName, status: "rejected",
         errorMessage: modelInPlan
           ? "Insufficient credits (concurrent request exhausted balance)"
@@ -245,8 +298,8 @@ export async function createVideoJob(args: CreateVideoArgs): Promise<CreateVideo
     }
 
     await tx.insert(usageLogsTable).values({
-      apiKeyId: apiKey.id, model, inputTokens: 0, outputTokens: durationSeconds,
-      totalTokens: durationSeconds, costUsd, requestId,
+      apiKeyId: apiKey.id, organizationId: orgIdForLogs, model, inputTokens: 0,
+      outputTokens: durationSeconds, totalTokens: durationSeconds, costUsd, requestId,
       jobOperationId: jobResult.operationName, status: "success", errorMessage: null,
     });
   });

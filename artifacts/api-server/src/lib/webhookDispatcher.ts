@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { db, webhooksTable } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { logger } from "./logger";
+import { assertSafePublicUrl, SsrfBlockedError } from "./ssrfGuard";
 
 export type WebhookEvent =
   | "usage.success"
@@ -44,30 +45,86 @@ export async function sendSingleWebhook(
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const signature = sign(hook.secret, timestamp, body);
 
+  // Re-verify and follow redirects manually so each hop passes the SSRF
+  // guard. This defeats both DNS rebinding (re-resolves at delivery) and
+  // public-to-private redirect smuggling (e.g. a public 30x → 169.254.x.x).
+  const MAX_REDIRECTS = 5;
+  const ABORT_MS = 8000;
+  let currentUrl = hook.url;
+  let response: Response | undefined;
+  const startedAt = Date.now();
+
   try {
-    const res = await fetch(hook.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Gateway-Signature": `sha256=${signature}`,
-        "X-Gateway-Timestamp": timestamp,
-        "X-Gateway-Event": payload.event,
-      },
-      body,
-      signal: AbortSignal.timeout(8000),
-    });
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      try {
+        await assertSafePublicUrl(currentUrl);
+      } catch (err) {
+        if (err instanceof SsrfBlockedError) {
+          logger.warn({ webhookId: hook.id, url: currentUrl, hop, reason: err.message },
+            "Webhook delivery blocked by SSRF guard");
+          return { ok: false, error: `SSRF guard blocked delivery: ${err.message}` };
+        }
+        throw err;
+      }
+
+      const remaining = ABORT_MS - (Date.now() - startedAt);
+      if (remaining <= 0) {
+        return { ok: false, error: "Webhook delivery timed out" };
+      }
+
+      response = await fetch(currentUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Gateway-Signature": `sha256=${signature}`,
+          "X-Gateway-Timestamp": timestamp,
+          "X-Gateway-Event": payload.event,
+        },
+        body,
+        redirect: "manual",
+        signal: AbortSignal.timeout(remaining),
+      });
+
+      // 30x — follow manually to re-validate the next hop
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location");
+        if (!location) {
+          return { ok: false, status: response.status, error: "Redirect without Location header" };
+        }
+        // Resolve relative redirects against the current URL
+        let next: URL;
+        try {
+          next = new URL(location, currentUrl);
+        } catch {
+          return { ok: false, error: `Invalid redirect target: ${location}` };
+        }
+        currentUrl = next.toString();
+        continue;
+      }
+
+      break;
+    }
+
+    if (!response) {
+      return { ok: false, error: "Webhook delivery produced no response" };
+    }
+
+    if (response.status >= 300 && response.status < 400) {
+      return { ok: false, status: response.status, error: `Too many redirects (>${MAX_REDIRECTS})` };
+    }
 
     await db
       .update(webhooksTable)
       .set({ lastTriggeredAt: new Date() })
       .where(eq(webhooksTable.id, hook.id));
 
-    if (!res.ok) {
-      logger.warn({ webhookId: hook.id, url: hook.url, status: res.status }, "Webhook endpoint returned non-2xx");
-      return { ok: false, status: res.status };
+    if (!response.ok) {
+      logger.warn({ webhookId: hook.id, url: hook.url, finalUrl: currentUrl, status: response.status },
+        "Webhook endpoint returned non-2xx");
+      return { ok: false, status: response.status };
     }
 
-    return { ok: true, status: res.status };
+    return { ok: true, status: response.status };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.warn({ webhookId: hook.id, url: hook.url, err: message }, "Webhook delivery failed");

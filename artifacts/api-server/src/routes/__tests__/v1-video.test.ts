@@ -47,6 +47,11 @@ const mockApiKey = {
     updatedAt: new Date(),
   },
   accountCreditBalance: 500.0,
+  subscriptionCredit: 500.0,
+  topupCredit: 0,
+  organizationId: null,
+  rpmLimit: null,
+  billingTarget: { targetType: "user" as const, id: 30, creditBalance: 500.0, topupCreditBalance: 0 },
 };
 
 vi.mock("@workspace/db", () => ({
@@ -54,7 +59,8 @@ vi.mock("@workspace/db", () => ({
   usersTable: { id: "id", creditBalance: "credit_balance", emailVerified: "email_verified", name: "name", email: "email", creditWarningEmailSentAt: "credit_warning_email_sent_at", isActive: "is_active" },
   apiKeysTable: { id: "id", planId: "plan_id", keyHash: "key_hash", isActive: "is_active", lastUsedAt: "last_used_at" },
   plansTable: { id: "id" },
-  usageLogsTable: { id: "id", apiKeyId: "api_key_id", model: "model", inputTokens: "input_tokens", outputTokens: "output_tokens", totalTokens: "total_tokens", costUsd: "cost_usd", requestId: "request_id", status: "status", errorMessage: "error_message", jobOperationId: "job_operation_id" },
+  usageLogsTable: { id: "id", apiKeyId: "api_key_id", organizationId: "organization_id", model: "model", inputTokens: "input_tokens", outputTokens: "output_tokens", totalTokens: "total_tokens", costUsd: "cost_usd", requestId: "request_id", status: "status", errorMessage: "error_message", jobOperationId: "job_operation_id" },
+  organizationsTable: { id: "id", creditBalance: "credit_balance", topupCreditBalance: "topup_credit_balance" },
   rateLimitBucketsTable: { userId: "user_id", tokens: "tokens", lastRefill: "last_refill" },
   modelCostsTable: { model: "model", inputPer1M: "input_per_1m", outputPer1M: "output_per_1m", perImage: "per_image", perSecond: "per_second", isActive: "is_active" },
   ipRateLimitsTable: {},

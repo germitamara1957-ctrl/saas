@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -6,48 +7,64 @@ import NotFound from "@/pages/not-found";
 import { useAuth } from "@/lib/auth";
 import { AuthProvider } from "@/lib/auth-provider";
 
+// Eager: landing + login pages so first paint is fast for unauthenticated visitors.
 import Landing from "@/pages/Landing";
-import Privacy from "@/pages/Privacy";
-import Terms from "@/pages/Terms";
-import Status from "@/pages/Status";
-
 import AdminLogin from "@/pages/admin/Login";
-import AdminDashboard from "@/pages/admin/Dashboard";
-import AdminDevelopers from "@/pages/admin/Developers";
-import AdminDeveloperDetail from "@/pages/admin/DeveloperDetail";
-import AdminApiKeys from "@/pages/admin/ApiKeys";
-import AdminAnalytics from "@/pages/admin/Analytics";
-import AdminPlans from "@/pages/admin/Plans";
-import AdminProviders from "@/pages/admin/Providers";
-import AdminPricing from "@/pages/admin/Pricing";
-import AdminAuditLog from "@/pages/admin/AuditLog";
-import AdminPromoCodes from "@/pages/admin/PromoCodes";
-import AdminSettings from "@/pages/admin/Settings";
-import AdminIncidents from "@/pages/admin/Incidents";
-
 import PortalLogin from "@/pages/portal/Login";
-import PortalSignup from "@/pages/portal/Signup";
-import PortalDashboard from "@/pages/portal/Dashboard";
-import PortalUsage from "@/pages/portal/Usage";
-import PortalApiKeys from "@/pages/portal/ApiKeys";
-import PortalPlans from "@/pages/portal/Plans";
-import PortalDocs from "@/pages/portal/Docs";
-import PortalSettings from "@/pages/portal/Settings";
-import PortalWebhooks from "@/pages/portal/Webhooks";
-import PortalLogs from "@/pages/portal/Logs";
-import ForgotPassword from "@/pages/portal/ForgotPassword";
-import ResetPassword from "@/pages/portal/ResetPassword";
-import VerifyEmail from "@/pages/portal/VerifyEmail";
-import Organizations from "@/pages/portal/Organizations";
-import OrganizationDetail from "@/pages/portal/OrganizationDetail";
-import AcceptInvite from "@/pages/portal/AcceptInvite";
 
-import { AdminLayout } from "@/components/layout/AdminLayout";
-import { PortalLayout } from "@/components/layout/PortalLayout";
+// Lazy: everything else gets its own chunk to shrink the initial bundle.
+const Privacy = lazy(() => import("@/pages/Privacy"));
+const Terms = lazy(() => import("@/pages/Terms"));
+const Status = lazy(() => import("@/pages/Status"));
+
+const AdminDashboard = lazy(() => import("@/pages/admin/Dashboard"));
+const AdminDevelopers = lazy(() => import("@/pages/admin/Developers"));
+const AdminDeveloperDetail = lazy(() => import("@/pages/admin/DeveloperDetail"));
+const AdminApiKeys = lazy(() => import("@/pages/admin/ApiKeys"));
+const AdminAnalytics = lazy(() => import("@/pages/admin/Analytics"));
+const AdminPlans = lazy(() => import("@/pages/admin/Plans"));
+const AdminProviders = lazy(() => import("@/pages/admin/Providers"));
+const AdminPricing = lazy(() => import("@/pages/admin/Pricing"));
+const AdminAuditLog = lazy(() => import("@/pages/admin/AuditLog"));
+const AdminPromoCodes = lazy(() => import("@/pages/admin/PromoCodes"));
+const AdminSettings = lazy(() => import("@/pages/admin/Settings"));
+const AdminIncidents = lazy(() => import("@/pages/admin/Incidents"));
+
+const PortalSignup = lazy(() => import("@/pages/portal/Signup"));
+const PortalDashboard = lazy(() => import("@/pages/portal/Dashboard"));
+const PortalUsage = lazy(() => import("@/pages/portal/Usage"));
+const PortalApiKeys = lazy(() => import("@/pages/portal/ApiKeys"));
+const PortalPlans = lazy(() => import("@/pages/portal/Plans"));
+const PortalDocs = lazy(() => import("@/pages/portal/Docs"));
+const PortalSettings = lazy(() => import("@/pages/portal/Settings"));
+const PortalWebhooks = lazy(() => import("@/pages/portal/Webhooks"));
+const PortalLogs = lazy(() => import("@/pages/portal/Logs"));
+const ForgotPassword = lazy(() => import("@/pages/portal/ForgotPassword"));
+const ResetPassword = lazy(() => import("@/pages/portal/ResetPassword"));
+const VerifyEmail = lazy(() => import("@/pages/portal/VerifyEmail"));
+const Organizations = lazy(() => import("@/pages/portal/Organizations"));
+const OrganizationDetail = lazy(() => import("@/pages/portal/OrganizationDetail"));
+const AcceptInvite = lazy(() => import("@/pages/portal/AcceptInvite"));
+
+const AdminLayout = lazy(() =>
+  import("@/components/layout/AdminLayout").then((m) => ({ default: m.AdminLayout })),
+);
+const PortalLayout = lazy(() =>
+  import("@/components/layout/PortalLayout").then((m) => ({ default: m.PortalLayout })),
+);
+
 import { AuthGuard } from "@/components/AuthGuard";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 const queryClient = new QueryClient();
+
+function RouteFallback() {
+  return (
+    <div className="flex items-center justify-center min-h-[200px]">
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-current border-t-transparent opacity-50" />
+    </div>
+  );
+}
 
 function RootRedirect() {
   const { isAuthenticated, user, loading } = useAuth();
@@ -60,22 +77,27 @@ function RootRedirect() {
 function AdminRoutes() {
   return (
     <AuthGuard role="admin">
-      <AdminLayout>
-        <Routes>
-          <Route index element={<AdminDashboard />} />
-          <Route path="dashboard" element={<AdminDashboard />} />
-          <Route path="developers" element={<AdminDevelopers />} />
-          <Route path="developers/:id" element={<AdminDeveloperDetail />} />
-          <Route path="api-keys" element={<AdminApiKeys />} />
-          <Route path="analytics" element={<AdminAnalytics />} />
-          <Route path="plans" element={<AdminPlans />} />
-          <Route path="providers" element={<AdminProviders />} />
-          <Route path="pricing" element={<AdminPricing />} />
-          <Route path="audit-log" element={<AdminAuditLog />} />
-          <Route path="promo-codes" element={<AdminPromoCodes />} />
-          <Route path="settings" element={<AdminSettings />} />
-          <Route path="incidents" element={<AdminIncidents />} /></Routes>
-      </AdminLayout>
+      <Suspense fallback={<RouteFallback />}>
+        <AdminLayout>
+          <Suspense fallback={<RouteFallback />}>
+            <Routes>
+              <Route index element={<AdminDashboard />} />
+              <Route path="dashboard" element={<AdminDashboard />} />
+              <Route path="developers" element={<AdminDevelopers />} />
+              <Route path="developers/:id" element={<AdminDeveloperDetail />} />
+              <Route path="api-keys" element={<AdminApiKeys />} />
+              <Route path="analytics" element={<AdminAnalytics />} />
+              <Route path="plans" element={<AdminPlans />} />
+              <Route path="providers" element={<AdminProviders />} />
+              <Route path="pricing" element={<AdminPricing />} />
+              <Route path="audit-log" element={<AdminAuditLog />} />
+              <Route path="promo-codes" element={<AdminPromoCodes />} />
+              <Route path="settings" element={<AdminSettings />} />
+              <Route path="incidents" element={<AdminIncidents />} />
+            </Routes>
+          </Suspense>
+        </AdminLayout>
+      </Suspense>
     </AuthGuard>
   );
 }
@@ -83,21 +105,25 @@ function AdminRoutes() {
 function PortalRoutes() {
   return (
     <AuthGuard role="developer">
-      <PortalLayout>
-        <Routes>
-          <Route index element={<PortalDashboard />} />
-          <Route path="dashboard" element={<PortalDashboard />} />
-          <Route path="api-keys" element={<PortalApiKeys />} />
-          <Route path="plans" element={<PortalPlans />} />
-          <Route path="usage" element={<PortalUsage />} />
-          <Route path="webhooks" element={<PortalWebhooks />} />
-          <Route path="logs" element={<PortalLogs />} />
-          <Route path="docs" element={<PortalDocs />} />
-          <Route path="settings" element={<PortalSettings />} />
-          <Route path="organizations" element={<Organizations />} />
-          <Route path="organizations/:id" element={<OrganizationDetail />} />
-        </Routes>
-      </PortalLayout>
+      <Suspense fallback={<RouteFallback />}>
+        <PortalLayout>
+          <Suspense fallback={<RouteFallback />}>
+            <Routes>
+              <Route index element={<PortalDashboard />} />
+              <Route path="dashboard" element={<PortalDashboard />} />
+              <Route path="api-keys" element={<PortalApiKeys />} />
+              <Route path="plans" element={<PortalPlans />} />
+              <Route path="usage" element={<PortalUsage />} />
+              <Route path="webhooks" element={<PortalWebhooks />} />
+              <Route path="logs" element={<PortalLogs />} />
+              <Route path="docs" element={<PortalDocs />} />
+              <Route path="settings" element={<PortalSettings />} />
+              <Route path="organizations" element={<Organizations />} />
+              <Route path="organizations/:id" element={<OrganizationDetail />} />
+            </Routes>
+          </Suspense>
+        </PortalLayout>
+      </Suspense>
     </AuthGuard>
   );
 }
@@ -111,23 +137,25 @@ function App() {
           <AuthProvider>
             <BrowserRouter basename={base}>
               <ErrorBoundary>
-                <Routes>
-                  <Route path="/" element={<RootRedirect />} />
-                  <Route path="/privacy" element={<Privacy />} />
-                  <Route path="/terms" element={<Terms />} />
-                  <Route path="/admin/login" element={<AdminLogin />} />
-                  <Route path="/admin/*" element={<AdminRoutes />} />
-                  <Route path="/login" element={<PortalLogin />} />
-                  <Route path="/portal/login" element={<PortalLogin />} />
-                  <Route path="/signup" element={<PortalSignup />} />
-                  <Route path="/forgot-password" element={<ForgotPassword />} />
-                  <Route path="/reset-password" element={<ResetPassword />} />
-                  <Route path="/verify-email" element={<VerifyEmail />} />
-                  <Route path="/status" element={<Status />} />
-                  <Route path="/portal/invite/:token" element={<AcceptInvite />} />
-                  <Route path="/portal/*" element={<PortalRoutes />} />
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
+                <Suspense fallback={<RouteFallback />}>
+                  <Routes>
+                    <Route path="/" element={<RootRedirect />} />
+                    <Route path="/privacy" element={<Privacy />} />
+                    <Route path="/terms" element={<Terms />} />
+                    <Route path="/admin/login" element={<AdminLogin />} />
+                    <Route path="/admin/*" element={<AdminRoutes />} />
+                    <Route path="/login" element={<PortalLogin />} />
+                    <Route path="/portal/login" element={<PortalLogin />} />
+                    <Route path="/signup" element={<PortalSignup />} />
+                    <Route path="/forgot-password" element={<ForgotPassword />} />
+                    <Route path="/reset-password" element={<ResetPassword />} />
+                    <Route path="/verify-email" element={<VerifyEmail />} />
+                    <Route path="/status" element={<Status />} />
+                    <Route path="/portal/invite/:token" element={<AcceptInvite />} />
+                    <Route path="/portal/*" element={<PortalRoutes />} />
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </Suspense>
                 <Toaster />
               </ErrorBoundary>
             </BrowserRouter>

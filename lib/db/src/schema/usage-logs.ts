@@ -32,6 +32,7 @@ export const usageLogsTable = pgTable("usage_logs", {
   index("usage_logs_model_idx").on(table.model),
   index("usage_logs_org_id_idx").on(table.organizationId),
   index("usage_logs_org_created_idx").on(table.organizationId, table.createdAt),
+  index("usage_logs_request_id_idx").on(table.requestId),
 ]);
 
 export const insertUsageLogSchema = createInsertSchema(usageLogsTable).omit({

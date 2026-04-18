@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, sum, count, gte, inArray, and, sql } from "drizzle-orm";
+import { eq, sum, count, gte, inArray, and, sql, isNull } from "drizzle-orm";
 import { db, usersTable, apiKeysTable, usageLogsTable, plansTable, webhooksTable } from "@workspace/db";
 import { generateApiKey, encryptApiKey, decryptApiKey } from "../../lib/crypto";
 import JSZip from "jszip";
@@ -39,10 +39,11 @@ router.get("/portal/me", async (req, res): Promise<void> => {
   const now = new Date();
   const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
+  // Personal stats only — exclude keys that bill against an organization pool.
   const userKeys = await db
     .select({ id: apiKeysTable.id })
     .from(apiKeysTable)
-    .where(eq(apiKeysTable.userId, userId));
+    .where(and(eq(apiKeysTable.userId, userId), isNull(apiKeysTable.organizationId)));
 
   const keyIds = userKeys.map((k) => k.id);
 
@@ -172,7 +173,7 @@ router.get("/portal/api-keys", async (req, res): Promise<void> => {
       monthlySpendLimitUsd: apiKeysTable.monthlySpendLimitUsd,
     })
     .from(apiKeysTable)
-    .where(eq(apiKeysTable.userId, userId))
+    .where(and(eq(apiKeysTable.userId, userId), isNull(apiKeysTable.organizationId)))
     .orderBy(apiKeysTable.createdAt);
 
   res.json(keys);
@@ -232,7 +233,11 @@ router.post("/portal/api-keys", async (req, res): Promise<void> => {
   const effectivePlanId = assignedPlanId ?? user.currentPlanId;
   const existingKeys = await db.select({ id: apiKeysTable.id, planId: apiKeysTable.planId })
     .from(apiKeysTable)
-    .where(and(eq(apiKeysTable.userId, userId), eq(apiKeysTable.isActive, true)));
+    .where(and(
+      eq(apiKeysTable.userId, userId),
+      eq(apiKeysTable.isActive, true),
+      isNull(apiKeysTable.organizationId),
+    ));
 
   let maxApiKeys = 1;
   const planIdForLimit = effectivePlanId ?? (existingKeys.find(k => k.planId != null)?.planId ?? null);
@@ -300,7 +305,11 @@ router.get("/portal/api-keys/:id/reveal", async (req, res): Promise<void> => {
       isActive: apiKeysTable.isActive,
     })
     .from(apiKeysTable)
-    .where(and(eq(apiKeysTable.id, keyId), eq(apiKeysTable.userId, userId)))
+    .where(and(
+      eq(apiKeysTable.id, keyId),
+      eq(apiKeysTable.userId, userId),
+      isNull(apiKeysTable.organizationId),
+    ))
     .limit(1);
 
   if (!key) {
@@ -331,7 +340,11 @@ router.patch("/portal/api-keys/:id", async (req, res): Promise<void> => {
   }
   const [key] = await db.select({ id: apiKeysTable.id })
     .from(apiKeysTable)
-    .where(and(eq(apiKeysTable.id, keyId), eq(apiKeysTable.userId, userId)))
+    .where(and(
+      eq(apiKeysTable.id, keyId),
+      eq(apiKeysTable.userId, userId),
+      isNull(apiKeysTable.organizationId),
+    ))
     .limit(1);
   if (!key) {
     res.status(404).json({ error: "API key not found" });
@@ -381,7 +394,11 @@ router.post("/portal/api-keys/:id/rotate", async (req, res): Promise<void> => {
   const [oldKey] = await db
     .select()
     .from(apiKeysTable)
-    .where(and(eq(apiKeysTable.id, keyId), eq(apiKeysTable.userId, userId)))
+    .where(and(
+      eq(apiKeysTable.id, keyId),
+      eq(apiKeysTable.userId, userId),
+      isNull(apiKeysTable.organizationId),
+    ))
     .limit(1);
   if (!oldKey) {
     res.status(404).json({ error: "API key not found" });
@@ -461,6 +478,7 @@ router.get("/portal/me/export", async (req, res): Promise<void> => {
     return;
   }
 
+  // Personal export — exclude org-scoped keys; org data lives in the org's own export.
   const apiKeys = await db.select({
     id: apiKeysTable.id,
     planId: apiKeysTable.planId,
@@ -474,7 +492,7 @@ router.get("/portal/me/export", async (req, res): Promise<void> => {
     revokedAt: apiKeysTable.revokedAt,
     expiresAt: apiKeysTable.expiresAt,
     createdAt: apiKeysTable.createdAt,
-  }).from(apiKeysTable).where(eq(apiKeysTable.userId, userId));
+  }).from(apiKeysTable).where(and(eq(apiKeysTable.userId, userId), isNull(apiKeysTable.organizationId)));
 
   const keyIds = apiKeys.map((k) => k.id);
   const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
@@ -542,7 +560,11 @@ router.delete("/portal/api-keys/:id", async (req, res): Promise<void> => {
 
   const [key] = await db.select({ id: apiKeysTable.id, userId: apiKeysTable.userId })
     .from(apiKeysTable)
-    .where(and(eq(apiKeysTable.id, keyId), eq(apiKeysTable.userId, userId)))
+    .where(and(
+      eq(apiKeysTable.id, keyId),
+      eq(apiKeysTable.userId, userId),
+      isNull(apiKeysTable.organizationId),
+    ))
     .limit(1);
 
   if (!key) {

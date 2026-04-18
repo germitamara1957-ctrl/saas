@@ -57,6 +57,13 @@
       "when": 1776700000000,
       "tag": "0007_financial_numeric_precision",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1776800000000,
+      "tag": "0008_orgs_fks_indexes",
+      "breakpoints": true
     }
   ]
 }
