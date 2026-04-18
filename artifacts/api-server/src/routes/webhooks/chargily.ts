@@ -43,7 +43,7 @@ router.post(
       return;
     }
 
-    if (!verifyWebhookSignature(rawBody, signature)) {
+    if (!(await verifyWebhookSignature(rawBody, signature))) {
       logger.warn({ ip: req.ip, hasSig: Boolean(signature) }, "Chargily webhook: bad signature");
       res.status(401).json({ error: "Invalid signature" });
       return;

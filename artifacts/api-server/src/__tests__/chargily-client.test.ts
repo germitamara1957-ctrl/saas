@@ -87,7 +87,7 @@ describe("chargily client — webhook signature verification", () => {
     const mod = await import("../lib/chargily");
     const body = JSON.stringify({ id: "evt_1", type: "checkout.paid", data: { id: "co_1", status: "paid" } });
     const sig = crypto.createHmac("sha256", "whsec_test").update(body).digest("hex");
-    expect(mod.verifyWebhookSignature(body, sig)).toBe(true);
+    expect(await mod.verifyWebhookSignature(body, sig)).toBe(true);
   });
 
   it("returns false for a tampered body", async () => {
@@ -95,24 +95,25 @@ describe("chargily client — webhook signature verification", () => {
     const mod = await import("../lib/chargily");
     const body = JSON.stringify({ id: "evt_1" });
     const sig = crypto.createHmac("sha256", "whsec_test").update(body).digest("hex");
-    expect(mod.verifyWebhookSignature(body + "tampered", sig)).toBe(false);
+    expect(await mod.verifyWebhookSignature(body + "tampered", sig)).toBe(false);
   });
 
   it("returns false for missing signature", async () => {
     const mod = await import("../lib/chargily");
-    expect(mod.verifyWebhookSignature("anything", undefined)).toBe(false);
-    expect(mod.verifyWebhookSignature("anything", "")).toBe(false);
+    expect(await mod.verifyWebhookSignature("anything", undefined)).toBe(false);
+    expect(await mod.verifyWebhookSignature("anything", "")).toBe(false);
   });
 
   it("returns false when webhook secret is missing", async () => {
     delete process.env.CHARGILY_WEBHOOK_SECRET;
     const mod = await import("../lib/chargily");
-    expect(mod.verifyWebhookSignature("body", "deadbeef")).toBe(false);
+    mod.invalidateChargilySecretsCache();
+    expect(await mod.verifyWebhookSignature("body", "deadbeef")).toBe(false);
   });
 
   it("uses constant-time comparison (different-length sigs fail without crash)", async () => {
     const mod = await import("../lib/chargily");
-    expect(mod.verifyWebhookSignature("body", "short")).toBe(false);
-    expect(mod.verifyWebhookSignature("body", "x".repeat(128))).toBe(false);
+    expect(await mod.verifyWebhookSignature("body", "short")).toBe(false);
+    expect(await mod.verifyWebhookSignature("body", "x".repeat(128))).toBe(false);
   });
 });

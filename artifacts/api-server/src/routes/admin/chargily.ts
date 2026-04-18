@@ -1,9 +1,49 @@
 import { Router, type IRouter } from "express";
 import { eq, desc } from "drizzle-orm";
 import { db, paymentIntentsTable, systemSettingsTable, auditLogsTable } from "@workspace/db";
-import { retrieveBalance, ChargilyConfigError, ChargilyError } from "../../lib/chargily";
+import {
+  retrieveBalance,
+  ChargilyConfigError,
+  ChargilyError,
+  getChargilySecretsStatus,
+  invalidateChargilySecretsCache,
+  CHARGILY_SECRET_KEY_SETTING,
+  CHARGILY_WEBHOOK_SECRET_SETTING,
+} from "../../lib/chargily";
 import { getChargilySettings } from "../../lib/chargilySettings";
+import { encryptApiKey } from "../../lib/crypto";
+import { getSettingValue } from "./settings";
 import { logger } from "../../lib/logger";
+
+/** Strict host-allowlist: scheme must be http/https, host must be a valid hostname[:port]. */
+function sanitizeBaseUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const u = new URL(raw.trim());
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Builds the public webhook URL the admin pastes into Chargily.
+ * Priority: (1) admin-configured app_base_url setting (trusted), (2) the
+ * APP_BASE_URL env, (3) Express's req.protocol+req.hostname (NOT raw forwarded
+ * headers — those are spoofable). Returns a clear placeholder if nothing valid
+ * is available so the admin sees they must configure app_base_url.
+ */
+async function buildWebhookUrl(req: { protocol: string; hostname: string }): Promise<string> {
+  const fromSetting = sanitizeBaseUrl(await getSettingValue("app_base_url"));
+  if (fromSetting) return `${fromSetting}/webhooks/chargily`;
+  const fromEnv = sanitizeBaseUrl(process.env.APP_BASE_URL);
+  if (fromEnv) return `${fromEnv}/webhooks/chargily`;
+  const proto = req.protocol === "http" || req.protocol === "https" ? req.protocol : "https";
+  const host = req.hostname;
+  if (!host) return "Configure app_base_url in settings to generate webhook URL";
+  return `${proto}://${host}/webhooks/chargily`;
+}
 
 const router: IRouter = Router();
 
@@ -106,6 +146,85 @@ router.get("/admin/billing/chargily/intents", async (req, res): Promise<void> =>
     ? await baseQuery.where(eq(paymentIntentsTable.status, status))
     : await baseQuery;
   res.json(rows);
+});
+
+/**
+ * GET /admin/billing/chargily/secrets
+ * Returns whether each Chargily secret is configured (without revealing values)
+ * and the auto-generated webhook URL the admin must paste into Chargily.
+ */
+router.get("/admin/billing/chargily/secrets", async (req, res): Promise<void> => {
+  const status = await getChargilySecretsStatus();
+  res.json({
+    ...status,
+    webhookUrl: buildWebhookUrl(req),
+  });
+});
+
+/**
+ * PUT /admin/billing/chargily/secrets
+ * Stores the Chargily secret key and/or webhook secret in the encrypted
+ * system_settings table. Empty/omitted fields are NOT touched. Sending an
+ * explicit `null` clears the stored value (env fallback then takes over).
+ */
+router.put("/admin/billing/chargily/secrets", async (req, res): Promise<void> => {
+  const { secretKey, webhookSecret } = req.body as {
+    secretKey?: string | null;
+    webhookSecret?: string | null;
+  };
+
+  const writes: Array<{ key: string; value: string | null; label: string }> = [];
+  if (secretKey !== undefined) {
+    writes.push({ key: CHARGILY_SECRET_KEY_SETTING, value: secretKey, label: "secretKey" });
+  }
+  if (webhookSecret !== undefined) {
+    writes.push({ key: CHARGILY_WEBHOOK_SECRET_SETTING, value: webhookSecret, label: "webhookSecret" });
+  }
+  if (writes.length === 0) {
+    res.status(400).json({ error: "Provide secretKey and/or webhookSecret" });
+    return;
+  }
+
+  const updatedKeys: string[] = [];
+  for (const w of writes) {
+    if (w.value === null || (typeof w.value === "string" && w.value.trim() === "")) {
+      // Clear stored value → env fallback takes over.
+      await db.delete(systemSettingsTable).where(eq(systemSettingsTable.key, w.key));
+      updatedKeys.push(`${w.label}:cleared`);
+      continue;
+    }
+    if (typeof w.value !== "string") {
+      res.status(400).json({ error: `${w.label} must be a string or null` });
+      return;
+    }
+    const trimmed = w.value.trim();
+    if (trimmed.length < 8) {
+      res.status(400).json({ error: `${w.label} looks too short` });
+      return;
+    }
+    const encrypted = encryptApiKey(trimmed);
+    await db
+      .insert(systemSettingsTable)
+      .values({ key: w.key, value: encrypted, encrypted: true })
+      .onConflictDoUpdate({
+        target: systemSettingsTable.key,
+        set: { value: encrypted, encrypted: true },
+      });
+    updatedKeys.push(`${w.label}:set`);
+  }
+
+  invalidateChargilySecretsCache();
+
+  await db.insert(auditLogsTable).values({
+    action: "admin.chargily.secrets_updated",
+    actorId: Number(req.authUser!.sub),
+    actorEmail: req.authUser!.email,
+    details: JSON.stringify({ updates: updatedKeys }),
+    ip: req.ip,
+  });
+
+  const status = await getChargilySecretsStatus();
+  res.json({ ...status, webhookUrl: buildWebhookUrl(req) });
 });
 
 export default router;

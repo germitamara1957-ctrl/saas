@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Save, Mail, CheckCircle2, Send, Globe, Video, Plus, Trash2, ShieldCheck } from "lucide-react";
+import { Loader2, Save, Mail, CheckCircle2, Send, Globe, Video, Plus, Trash2, ShieldCheck, KeyRound, Copy, Webhook } from "lucide-react";
 
 interface DocsVideo {
   title: string;
@@ -449,8 +449,190 @@ export default function AdminSettings() {
         </CardContent>
       </Card>
 
+      <ChargilySecretsCard />
+
       <TwoFactorCard />
     </div>
+  );
+}
+
+interface ChargilySecretsState {
+  hasSecretKey: boolean;
+  hasWebhookSecret: boolean;
+  secretKeySource: "db" | "env" | "missing";
+  webhookSecretSource: "db" | "env" | "missing";
+  mode: "test" | "live";
+  webhookUrl: string;
+}
+
+function ChargilySecretsCard() {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [state, setState] = useState<ChargilySecretsState | null>(null);
+  const [secretKey, setSecretKey] = useState("");
+  const [webhookSecret, setWebhookSecret] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/billing/chargily/secrets`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load");
+      const data = (await res.json()) as ChargilySecretsState;
+      setState(data);
+    } catch {
+      toast({ title: "Error", description: "Could not load Chargily settings", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  const handleSave = async () => {
+    const payload: Record<string, string> = {};
+    if (secretKey.trim()) payload.secretKey = secretKey.trim();
+    if (webhookSecret.trim()) payload.webhookSecret = webhookSecret.trim();
+    if (Object.keys(payload).length === 0) {
+      toast({ title: "Nothing to save", description: "Enter at least one key.", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/billing/chargily/secrets`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error ?? "Save failed");
+      }
+      const data = (await res.json()) as ChargilySecretsState;
+      setState(data);
+      setSecretKey("");
+      setWebhookSecret("");
+      toast({ title: "Saved", description: "Chargily keys updated." });
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Save failed",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const copyWebhookUrl = async () => {
+    if (!state?.webhookUrl) return;
+    try {
+      await navigator.clipboard.writeText(state.webhookUrl);
+      toast({ title: "Copied", description: "Webhook URL copied to clipboard." });
+    } catch {
+      toast({ title: "Copy failed", description: "Please copy manually.", variant: "destructive" });
+    }
+  };
+
+  const sourceLabel = (src: "db" | "env" | "missing"): { text: string; cls: string } => {
+    if (src === "db") return { text: "Saved (database)", cls: "text-green-600" };
+    if (src === "env") return { text: "From environment variable", cls: "text-blue-600" };
+    return { text: "Not configured", cls: "text-destructive" };
+  };
+
+  return (
+    <Card data-testid="card-chargily-secrets">
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <KeyRound className="h-5 w-5 text-primary" />
+          <CardTitle>Chargily Pay (Algeria)</CardTitle>
+        </div>
+        <CardDescription>
+          Configure the Chargily secret key and webhook secret used for DZD top-ups. Values are stored encrypted.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {loading ? (
+          <div className="flex items-center justify-center py-6">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : state ? (
+          <>
+            <div className="rounded-md border bg-muted/30 p-3 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="font-medium">Mode</span>
+                <span className={state.mode === "live" ? "text-amber-600 font-semibold" : "text-muted-foreground"}>
+                  {state.mode.toUpperCase()}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Controlled by the <code>CHARGILY_MODE</code> environment variable.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Webhook className="h-4 w-4" /> Webhook URL (paste this in your Chargily dashboard)
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  value={state.webhookUrl}
+                  readOnly
+                  className="font-mono text-xs"
+                  data-testid="input-chargily-webhook-url"
+                />
+                <Button variant="outline" onClick={copyWebhookUrl} data-testid="button-copy-webhook-url">
+                  <Copy className="h-4 w-4 mr-2" /> Copy
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Auto-generated from the current host. Re-copy this if your domain changes.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="chargily-secret-key">CHARGILY_SECRET_KEY</Label>
+              <p className={`text-xs ${sourceLabel(state.secretKeySource).cls}`}>
+                Status: {sourceLabel(state.secretKeySource).text}
+              </p>
+              <Input
+                id="chargily-secret-key"
+                type="password"
+                placeholder={state.hasSecretKey ? "•••••••• (leave empty to keep current)" : "test_sk_... or live_sk_..."}
+                value={secretKey}
+                onChange={(e) => setSecretKey(e.target.value)}
+                autoComplete="off"
+                data-testid="input-chargily-secret-key"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="chargily-webhook-secret">CHARGILY_WEBHOOK_SECRET</Label>
+              <p className={`text-xs ${sourceLabel(state.webhookSecretSource).cls}`}>
+                Status: {sourceLabel(state.webhookSecretSource).text}
+              </p>
+              <Input
+                id="chargily-webhook-secret"
+                type="password"
+                placeholder={state.hasWebhookSecret ? "•••••••• (leave empty to keep current)" : "whsec_..."}
+                value={webhookSecret}
+                onChange={(e) => setWebhookSecret(e.target.value)}
+                autoComplete="off"
+                data-testid="input-chargily-webhook-secret"
+              />
+            </div>
+
+            <Button onClick={handleSave} disabled={saving} data-testid="button-save-chargily-secrets">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+              Save Chargily Keys
+            </Button>
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 

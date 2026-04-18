@@ -11,10 +11,16 @@
  * uses constant-time comparison to defeat timing attacks.
  */
 import crypto from "node:crypto";
+import { eq } from "drizzle-orm";
+import { db, systemSettingsTable } from "@workspace/db";
 import { logger } from "./logger";
+import { decryptApiKey } from "./crypto";
 
 const TEST_BASE_URL = "https://pay.chargily.net/test/api/v2";
 const LIVE_BASE_URL = "https://pay.chargily.net/api/v2";
+
+export const CHARGILY_SECRET_KEY_SETTING = "chargily_secret_key";
+export const CHARGILY_WEBHOOK_SECRET_SETTING = "chargily_webhook_secret";
 
 export type ChargilyMode = "test" | "live";
 
@@ -39,24 +45,86 @@ export function getChargilyBaseUrl(mode: ChargilyMode = getMode()): string {
   return mode === "live" ? LIVE_BASE_URL : TEST_BASE_URL;
 }
 
-function getSecretKey(): string {
-  const key = process.env.CHARGILY_SECRET_KEY;
-  if (!key || !key.trim()) {
-    throw new ChargilyConfigError(
-      "CHARGILY_SECRET_KEY is not configured. Set it in environment secrets.",
-    );
-  }
-  return key.trim();
+// In-memory cache (process-local) — invalidated on admin update.
+// TTL also flushes the cache after 60s for multi-instance safety.
+interface CacheEntry { value: string; expiresAt: number; }
+const secretCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 60_000;
+
+export function invalidateChargilySecretsCache(): void {
+  secretCache.clear();
 }
 
-function getWebhookSecret(): string {
-  const secret = process.env.CHARGILY_WEBHOOK_SECRET;
-  if (!secret || !secret.trim()) {
+async function readSettingFromDb(key: string): Promise<string | null> {
+  try {
+    const [row] = await db
+      .select({ value: systemSettingsTable.value, encrypted: systemSettingsTable.encrypted })
+      .from(systemSettingsTable)
+      .where(eq(systemSettingsTable.key, key))
+      .limit(1);
+    if (!row || !row.value) return null;
+    if (row.encrypted) return decryptApiKey(row.value);
+    return row.value;
+  } catch (err) {
+    logger.error({ err, key }, "Failed to read Chargily setting from DB");
+    return null;
+  }
+}
+
+async function readSecret(settingKey: string, envKey: string): Promise<string | null> {
+  const cached = secretCache.get(settingKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  // DB takes precedence so admin-saved values override deployment env vars.
+  const fromDb = await readSettingFromDb(settingKey);
+  const value = fromDb ?? process.env[envKey] ?? null;
+  if (value && value.trim()) {
+    const trimmed = value.trim();
+    secretCache.set(settingKey, { value: trimmed, expiresAt: Date.now() + CACHE_TTL_MS });
+    return trimmed;
+  }
+  return null;
+}
+
+async function getSecretKey(): Promise<string> {
+  const key = await readSecret(CHARGILY_SECRET_KEY_SETTING, "CHARGILY_SECRET_KEY");
+  if (!key) {
     throw new ChargilyConfigError(
-      "CHARGILY_WEBHOOK_SECRET is not configured. Set it in environment secrets.",
+      "CHARGILY_SECRET_KEY is not configured. Add it from the admin Settings page or set the environment variable.",
     );
   }
-  return secret.trim();
+  return key;
+}
+
+async function getWebhookSecret(): Promise<string> {
+  const secret = await readSecret(CHARGILY_WEBHOOK_SECRET_SETTING, "CHARGILY_WEBHOOK_SECRET");
+  if (!secret) {
+    throw new ChargilyConfigError(
+      "CHARGILY_WEBHOOK_SECRET is not configured. Add it from the admin Settings page or set the environment variable.",
+    );
+  }
+  return secret;
+}
+
+/** Returns whether each Chargily secret is configured (DB or env). Does NOT reveal the actual values. */
+export async function getChargilySecretsStatus(): Promise<{
+  hasSecretKey: boolean;
+  hasWebhookSecret: boolean;
+  secretKeySource: "db" | "env" | "missing";
+  webhookSecretSource: "db" | "env" | "missing";
+  mode: ChargilyMode;
+}> {
+  const dbKey = await readSettingFromDb(CHARGILY_SECRET_KEY_SETTING);
+  const dbWh = await readSettingFromDb(CHARGILY_WEBHOOK_SECRET_SETTING);
+  const envKey = process.env.CHARGILY_SECRET_KEY?.trim();
+  const envWh = process.env.CHARGILY_WEBHOOK_SECRET?.trim();
+  return {
+    hasSecretKey: Boolean(dbKey || envKey),
+    hasWebhookSecret: Boolean(dbWh || envWh),
+    secretKeySource: dbKey ? "db" : envKey ? "env" : "missing",
+    webhookSecretSource: dbWh ? "db" : envWh ? "env" : "missing",
+    mode: getMode(),
+  };
 }
 
 interface RequestOptions {
@@ -74,7 +142,7 @@ async function chargilyRequest<T>(
 ): Promise<T> {
   const { method = "GET", body, query, retries = 2, signal } = opts;
   const baseUrl = getChargilyBaseUrl();
-  const secretKey = getSecretKey();
+  const secretKey = await getSecretKey();
 
   const url = new URL(`${baseUrl}${path}`);
   if (query) {
@@ -255,13 +323,13 @@ export async function retrieveBalance(): Promise<ChargilyBalance> {
  * @param signatureHeader Value of the `signature` header.
  * @returns true if the signature matches, false otherwise.
  */
-export function verifyWebhookSignature(
+export async function verifyWebhookSignature(
   rawBody: Buffer | string,
   signatureHeader: string | undefined | null,
-): boolean {
+): Promise<boolean> {
   if (!signatureHeader || typeof signatureHeader !== "string") return false;
   let secret: string;
-  try { secret = getWebhookSecret(); } catch (err) {
+  try { secret = await getWebhookSecret(); } catch (err) {
     logger.error({ err }, "Chargily webhook secret not configured");
     return false;
   }
