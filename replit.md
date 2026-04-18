@@ -266,6 +266,59 @@ Do **not** hardcode any payment credentials. Always store them as Replit Secrets
 
 ## Recent Changes (Apr 2026)
 
+### Session 30 — Security & reliability hardening sprint (9 plans + 3 follow-ups)
+
+A nine-plan production-hardening pass driven by an architect-led code review, plus three follow-up fixes after the second review round. Final state: 196/196 tests, typecheck clean across 8 packages, `pnpm audit --prod` reports no known vulnerabilities.
+
+**Plans executed:**
+1. **P1 — Vulnerable deps**: upgraded all packages flagged by `pnpm audit`. Lockfile regenerated.
+2. **P2 — Money columns → `numeric(18,8)`**: ensured every USD/credit column uses exact decimal storage; `users.spend_alert_threshold` (ratio) + `rate_limit_buckets_v2.tokens` (counter) intentionally kept as `doublePrecision`.
+3. **P3 — Crypto hardening (`lib/crypto.ts`)**: `ENCRYPTION_KEY` is now mandatory (no JWT fallback at encryption time); module fails fast at load. Old ciphertext can still decrypt via `JWT_SECRET` for backward compat.
+4. **P4 — Video billing org-aware**: `videoService.createVideoJob` now reads `apiKey.billingTarget` and debits the correct pool (org pool vs. user dual-credit pool); `usage_logs.organizationId` stamped. `refundFailedVideoJob` routes refunds back through the same target by reading `organizationId` from the log row. Test mocks updated (`organizationsTable`, `usage_logs.organization_id`, `billingTarget`/`subscriptionCredit`/`topupCredit`/`organizationId`/`rpmLimit` on mockApiKey).
+5. **P5 — Org-aware authz on `/portal/api-keys*`**: every personal-key endpoint (`GET/POST/PATCH/DELETE/rotate`) now also filters `isNull(apiKeysTable.organizationId)` so org-scoped keys can never be enumerated/managed via personal routes (org keys live behind `/portal/organizations/:id/api-keys` with role checks). Follow-up extended this to `/portal/me` monthly stats and `/portal/me/export` so org-key metadata never leaks into personal aggregates.
+6. **P6 — Atomic-claim idempotency (`middlewares/idempotency.ts`, rewritten)**:
+   - Replaces the in-memory pending-set with two new DB columns (lazy `ALTER TABLE IF NOT EXISTS`): `is_pending BOOLEAN` and `claim_token TEXT`.
+   - `tryClaim` is a single `INSERT ... ON CONFLICT (api_key_id, key) DO NOTHING RETURNING` that atomically claims the slot and stamps a per-request `crypto.randomBytes(16).hex` lease token; returns the token on success, `null` on conflict.
+   - **Stale-takeover** uses CAS-style conditional `UPDATE` (no delete-then-reinsert): `WHERE is_pending=TRUE AND claim_token=oldToken AND created_at<staleBefore` — the old owner cannot win a finalize race after a takeover.
+   - All terminal SQL paths (finalize, 5xx-cleanup, oversize-cleanup, `res.on("close")` safety net) gate on `claim_token = ourToken` so a late completion by the previous owner can never overwrite a new owner's response.
+   - `PENDING_TIMEOUT_MS` raised from 5min → **30min** (well above any handler timeout incl. video) to make takeover races vanishingly rare in normal operation.
+   - SSE / `Idempotency-Key`-less / non-billing routes still bypass the middleware.
+7. **P7 — SSRF hardening (`lib/ssrfGuard.ts` NEW + webhook integration)**:
+   - `assertSafePublicUrl(url)` rejects non-`http(s)` protocols, hostnames that DNS-resolve to loopback / private (RFC 1918) / link-local (169.254/16) / ULA (`fc00::/7`) / cloud metadata (`169.254.169.254`, `fd00:ec2::254`) / multicast / unspecified addresses.
+   - Called both at webhook **registration** (`POST/PATCH /portal/webhooks`) AND at every **delivery** hop (defense against DNS rebinding).
+   - **Round 2 follow-up**: `webhookDispatcher.sendSingleWebhook` was using default `redirect: "follow"` which let a public 30x bypass the guard to a private target. Replaced with a manual redirect loop: `redirect: "manual"`, `MAX_REDIRECTS=5`, per-hop `assertSafePublicUrl(currentUrl)`, relative redirects resolved via `new URL(loc, currentUrl)`, total time budget `ABORT_MS=8000` shared across hops.
+8. **P8 — DB FKs + indexes (`migration 0008_orgs_fks_indexes.sql`)**:
+   - `api_keys.organization_id → organizations.id ON DELETE SET NULL`
+   - `usage_logs.organization_id → organizations.id ON DELETE SET NULL`
+   - Indexes: `api_keys.organization_id`, `usage_logs.request_id`.
+   - Migration uses idempotent guards (drop/recreate FKs only if absent). Applied directly to dev DB via raw SQL because the dev DB was set up via `db push`, not `migrate.mjs`.
+9. **P9 — Dashboard route lazy-loading (`artifacts/dashboard/src/App.tsx`)**:
+   - All admin + portal pages and `AdminLayout`/`PortalLayout` converted to `React.lazy(() => import(...))`.
+   - Two-level `<Suspense fallback={<RouteFallback/>}>` boundaries (one for the layout chunk, one for the page chunk) so layout shell paints first.
+   - Landing/Login pages remain eager-loaded for fastest first paint on unauth visits.
+   - Result: ~30+ route chunks vs. one monolithic bundle.
+
+**Code review iterations (architect):**
+- **Round 1 verdict: Fail** — flagged 3 critical issues: SSRF redirect bypass, idempotency stale-claim race window, `/portal/me` + export still leaking org-key metadata.
+- All 3 fixed (see P5 + P6 + P7 details above).
+- **Round 2 verdict: PASS** — "the three follow-up fixes appear to close the originally reported issues without introducing a new medium/severe race or bypass."
+
+**Files touched (round 2 final state):**
+- `artifacts/api-server/src/lib/webhookDispatcher.ts` (manual redirect loop, per-hop SSRF check)
+- `artifacts/api-server/src/lib/ssrfGuard.ts` (new)
+- `artifacts/api-server/src/lib/videoService.ts` (org-aware debit + refund routing)
+- `artifacts/api-server/src/middlewares/idempotency.ts` (claim_token CAS, 30min timeout)
+- `artifacts/api-server/src/routes/portal/api-keys.ts` (`isNull(organizationId)` everywhere)
+- `artifacts/api-server/src/routes/portal/me.ts` (`isNull(organizationId)` on stats + export)
+- `artifacts/api-server/src/routes/portal/webhooks.ts` (registration-time SSRF check)
+- `lib/db/src/schema/api-keys.ts`, `lib/db/src/schema/usage-logs.ts` (FK declarations + indexes)
+- `lib/db/migrations/0008_orgs_fks_indexes.sql` + `_journal.json` (new)
+- `lib/crypto.ts` (mandatory ENCRYPTION_KEY)
+- `artifacts/dashboard/src/App.tsx` (React.lazy + Suspense)
+- 17 test files updated with org-aware mocks
+
+**Suggested follow-up tests (not done this session):** (a) multi-hop redirect to private IP via webhook delivery, (b) idempotency takeover + late old-owner finalize race scenario, (c) `/portal/me` org-key exclusion regression test.
+
 ### Session 29 — Sprint close-out (T13 soft limits + T6 legal pages + T14 test fixes)
 
 Closed all remaining sprint items; suite now 196/196 tests green.
