@@ -266,6 +266,21 @@ Do **not** hardcode any payment credentials. Always store them as Replit Secrets
 
 ## Recent Changes (Apr 2026)
 
+### Session 31 — Polish: regression tests, skeleton loaders, dependabot, scheduled audit
+
+Four-item polish pass after the Session 30 hardening sprint. The regression tests immediately caught two real org-key isolation gaps that had been missed in P5/round-2.
+
+1. **Regression tests** (`artifacts/api-server/src/__tests__/regression-fixes.test.ts`, 10 tests):
+   - **SSRF redirect**: stubs `globalThis.fetch` to return 30x → `169.254.169.254` / `127.0.0.1` and to a public-redirect-loop; asserts `sendSingleWebhook` rejects, calls fetch only once for blocked targets, and caps loops.
+   - **Idempotency CAS**: source-level invariants on `idempotency.ts` — `claim_token` column declared, per-request token via `crypto.randomBytes(16)`, takeover is a CAS UPDATE (no DELETE+INSERT race), every terminal mutation gates on `claim_token = ${ourToken}`, `PENDING_TIMEOUT_MS ≥ 15min`.
+   - **Org-key isolation**: walks every `.from(apiKeysTable)` call in `routes/portal/me.ts` and asserts the surrounding query contains `isNull(apiKeysTable.organizationId)`.
+   - **Bonus catch**: the org-key test surfaced two leaks missed in Session 30: (a) `priorKey` lookup at line 224 (plan-enrollment) didn't filter org keys; (b) `existingKeys` lookup at line 622 (free-plan enrollment) could overwrite an org key as if it were a personal planless key. Both fixed.
+2. **Skeleton loaders** (`artifacts/dashboard/src/components/RouteSkeleton.tsx` NEW): replaced the centred spinner `RouteFallback` with a page-shaped skeleton (header + 4 stat cards + 5-row table) that mirrors typical dashboard layouts. Reduces layout shift and perceived loading time during lazy-route chunk fetches.
+3. **Dependabot** (`.github/dependabot.yml` NEW): weekly cadence, groups dev-dependencies and prod-minor-and-patch into batched PRs, separate ecosystem entry for `github-actions`.
+4. **Scheduled security audit** (`.github/workflows/security-audit.yml` NEW): cron at 06:00 UTC on the 1st of every month + manual `workflow_dispatch`, runs `pnpm audit --prod --audit-level=moderate`, uploads JSON report as artifact, opens an Issue (label `security`) when the audit fails on a scheduled run.
+
+Final state: **206/206 tests** (was 196 before regression tests + 2 fixes), typecheck clean across 8 packages, dashboard restarts cleanly with the new skeleton fallback.
+
 ### Session 30 — Security & reliability hardening sprint (9 plans + 3 follow-ups)
 
 A nine-plan production-hardening pass driven by an architect-led code review, plus three follow-up fixes after the second review round. Final state: 196/196 tests, typecheck clean across 8 packages, `pnpm audit --prod` reports no known vulnerabilities.

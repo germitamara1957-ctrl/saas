@@ -221,7 +221,11 @@ router.post("/portal/api-keys", async (req, res): Promise<void> => {
     assignedPlanId = plan.id;
     const [priorKey] = await db.select({ id: apiKeysTable.id })
       .from(apiKeysTable)
-      .where(and(eq(apiKeysTable.userId, userId), eq(apiKeysTable.planId, plan.id)))
+      .where(and(
+        eq(apiKeysTable.userId, userId),
+        eq(apiKeysTable.planId, plan.id),
+        isNull(apiKeysTable.organizationId),
+      ))
       .limit(1);
     if (!priorKey) {
       initialCredits = plan.monthlyCredits;
@@ -619,7 +623,11 @@ router.post("/portal/plans/:planId/enroll", async (req, res): Promise<void> => {
 
   const existingKeys = await db.select()
     .from(apiKeysTable)
-    .where(and(eq(apiKeysTable.userId, userId), eq(apiKeysTable.isActive, true)))
+    .where(and(
+      eq(apiKeysTable.userId, userId),
+      eq(apiKeysTable.isActive, true),
+      isNull(apiKeysTable.organizationId),
+    ))
     .limit(10);
 
   const planlessKey = existingKeys.find(k => k.planId === null);

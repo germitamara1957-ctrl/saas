@@ -1,0 +1,56 @@
+# Dependabot configuration
+# Docs: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+#
+# Strategy:
+# - Weekly cadence (low noise, high signal).
+# - Group dev-only updates into one PR per ecosystem so we don't drown in tiny bumps.
+# - Security updates always open as separate PRs (Dependabot default behaviour).
+
+version: 2
+updates:
+  # ─── npm / pnpm workspaces ───
+  # The repo is a single pnpm monorepo, so one entry at the root covers
+  # every package.json picked up by the lockfile.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Asia/Riyadh"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+      include: "scope"
+    groups:
+      # Bundle all dev-only updates into one PR per week.
+      dev-dependencies:
+        dependency-type: "development"
+      # Bundle non-major prod patch/minor updates together.
+      prod-minor-and-patch:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+    # Major prod bumps stay as individual PRs so we can review breaking changes
+    # one library at a time.
+    ignore: []
+
+  # ─── GitHub Actions ───
+  # Keeps action versions (e.g. actions/checkout@v4) up to date.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Asia/Riyadh"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "chore(actions)"

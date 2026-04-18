@@ -55,16 +55,13 @@ const PortalLayout = lazy(() =>
 
 import { AuthGuard } from "@/components/AuthGuard";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { RouteSkeleton } from "@/components/RouteSkeleton";
 
 const queryClient = new QueryClient();
 
-function RouteFallback() {
-  return (
-    <div className="flex items-center justify-center min-h-[200px]">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-current border-t-transparent opacity-50" />
-    </div>
-  );
-}
+// Page-shaped skeleton placeholder for lazy-loaded routes (replaces the old
+// centred spinner — keeps layout stable and reduces perceived loading time).
+const RouteFallback = RouteSkeleton;
 
 function RootRedirect() {
   const { isAuthenticated, user, loading } = useAuth();
