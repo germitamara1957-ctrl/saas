@@ -41,13 +41,13 @@ outputType = "webview"
 name = "API Server"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "pnpm --filter @workspace/api-server run dev"
-waitForPort = 8080
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=8080 pnpm --filter @workspace/api-server run dev"
+waitForPort = 8080
 
 [agent]
 stack = "PNPM_WORKSPACE"
@@ -60,6 +60,10 @@ timeoutMs = 20000
 [[ports]]
 localPort = 3000
 externalPort = 3003
+
+[[ports]]
+localPort = 3001
+externalPort = 5173
 
 [[ports]]
 localPort = 8080
