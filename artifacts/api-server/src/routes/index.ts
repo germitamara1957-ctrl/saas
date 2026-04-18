@@ -23,6 +23,9 @@ import portalWebhooksRouter from "./portal/webhooks";
 import portalLogsRouter from "./portal/logs";
 import portalOrganizationsRouter from "./portal/organizations";
 import portalDocsRouter from "./portal/docs";
+import portalBillingRouter from "./portal/billing";
+import adminChargilyRouter from "./admin/chargily";
+import chargilyWebhookRouter from "./webhooks/chargily";
 
 import statusRouter from "./status";
 
@@ -60,6 +63,7 @@ router.use("/admin/promo-codes", adminRateLimit, requireAdmin);
 router.use("/admin/settings", adminRateLimit, requireAdmin);
 router.use("/admin/incidents", adminRateLimit, requireAdmin);
 router.use("/admin/2fa", adminRateLimit, requireAdmin);
+router.use("/admin/billing", adminRateLimit, requireAdmin);
 router.use(adminProvidersRouter);
 router.use(adminPlansRouter);
 router.use(adminUsersRouter);
@@ -71,6 +75,7 @@ router.use(adminPromoCodesRouter);
 router.use(adminSettingsRouter);
 router.use(adminIncidentsRouter);
 router.use(adminTwoFaRouter);
+router.use(adminChargilyRouter);
 
 // Portal routes — login is public, /me /api-keys /usage require portal JWT
 router.use(portalAuthRouter);
@@ -84,12 +89,17 @@ router.use("/portal/promo-codes", requireAuth);
 router.use("/portal/webhooks", requireAuth);
 router.use("/portal/logs", requireAuth);
 router.use("/portal/organizations", requireAuth);
+router.use("/portal/billing", requireAuth);
 router.use(portalMeRouter);
 router.use(portalUsageRouter);
 router.use(portalPromoCodesRouter);
 router.use(portalWebhooksRouter);
 router.use(portalLogsRouter);
 router.use(portalOrganizationsRouter);
+router.use(portalBillingRouter);
+
+// Webhook receivers (no auth — verified via HMAC inside the handler).
+router.use(chargilyWebhookRouter);
 
 // V1 proxy routes — api key auth is applied inline per route
 import { captureRequestResponse } from "../middlewares/logCapture";

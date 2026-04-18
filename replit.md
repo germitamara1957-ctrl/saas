@@ -266,6 +266,44 @@ Do **not** hardcode any payment credentials. Always store them as Replit Secrets
 
 ## Recent Changes (Apr 2026)
 
+### Session 32 — Chargily Pay V2 integration (Algerian payment gateway)
+
+Adds DZD→USD credit top-ups via Chargily Pay V2. Users pay in Algerian Dinars on Chargily's hosted checkout; credits land in `users.topupCreditBalance` only after a HMAC-verified webhook arrives (CAS-idempotent — never double-credits even on retries or replays).
+
+1. **Schema** (`lib/db/migrations/0009_chargily_payments.sql`):
+   - `payment_intents` (serial id, userId FK, chargilyCheckoutId UNIQUE, amountDzd, amountUsd, exchangeRate, currency, status [pending|paid|failed|canceled|expired], mode [test|live], checkoutUrl, creditedAt, failureReason, createdAt). Indexed on userId, chargilyCheckoutId, status, createdAt.
+   - `chargily_webhook_events` (serial id, eventId UNIQUE — replay protection, eventType, signature, payload TEXT, receivedAt). Indexed on eventId, receivedAt.
+   - Seeds 3 settings rows in `app_settings`: `chargily_dzd_to_usd_rate=135`, `chargily_min_topup_dzd=500`, `chargily_max_topup_dzd=500000`. All `IF NOT EXISTS` / `ON CONFLICT DO NOTHING` — fully idempotent.
+
+2. **HTTP client** (`artifacts/api-server/src/lib/chargily.ts`):
+   - `getChargilyBaseUrl()` switches between `https://pay.chargily.net/test/api/v2` and `…/api/v2` based on `CHARGILY_MODE`.
+   - `chargilyRequest()` retries 5xx/network errors (default 2 retries, exponential backoff), no retry on 4xx. Bearer auth from `CHARGILY_SECRET_KEY`.
+   - `createCustomer`, `createCheckout`, `retrieveCheckout`, `retrieveBalance`.
+   - `verifyWebhookSignature(rawBody, sig)` — HMAC-SHA256 with constant-time `timingSafeEqual`; returns false (not throws) when secret missing or sig malformed.
+
+3. **Settings helper** (`lib/chargilySettings.ts`): typed read/write of the three `app_settings` rows with sensible fallbacks.
+
+4. **Routes**:
+   - `routes/portal/billing.ts` (auth-gated): `GET /portal/billing/config`, `POST /portal/billing/topup` (validates min/max, creates intent, opens Chargily checkout, returns `checkoutUrl`), `GET /portal/billing/intents`, `GET /portal/billing/intents/:id` (with optional live status refresh after 30s for missed webhooks — refresh **never** credits).
+   - `routes/webhooks/chargily.ts`: raw-body verified by `express.raw()` mounted in `app.ts` BEFORE `express.json()`. Order: empty-body 400 → bad-sig 401 → bad-JSON 400 → malformed-event 400 → INSERT into `chargily_webhook_events` (UNIQUE on eventId stops replays — duplicate returns 200) → lookup intent (unknown returns 200) → CAS UPDATE `status='paid'` WHERE `status='pending'` RETURNING (only first wins, returns `already_processed: true` otherwise) → if rows returned: increment `topupCreditBalance` and stamp `creditedAt`.
+   - `routes/admin/chargily.ts` (admin-gated): `GET /admin/billing/chargily/balance`, `GET/PUT /admin/billing/chargily/settings`.
+
+5. **UI** (`artifacts/dashboard/src/pages/portal/`):
+   - `Billing.tsx` — top-up form with live USD preview, validation (min/max from `/billing/config`), AR/EN labels, RTL-aware, transaction history table with status badges. Test-mode banner.
+   - `BillingResult.tsx` — success/failure landing page with auto-redirect to `/portal/billing` after 8s.
+   - Sidebar entry "شحن الرصيد" / "Top up" added to `PortalLayout.tsx`.
+
+6. **Tests** (`artifacts/api-server/src/__tests__/`): 235/235 passing (29 new across 3 files):
+   - `chargily-client.test.ts` — base URL by mode, missing secret throws ChargilyConfigError, Bearer auth header, retry on 5xx, no-retry on 4xx, HMAC verify (valid/tampered/missing/wrong-length/missing-secret).
+   - `chargily-webhook.test.ts` — 401 on missing/bad sig, 400 on empty body / malformed event, exactly-once credit invariant under same-event-id replay AND different-event-id-same-checkout replay, failed events do NOT credit, unknown checkout returns 200.
+   - `billing-route.test.ts` — auth required, validation (missing/negative/below-min/above-max), creates intent + returns checkout URL, isolation across users, cannot read another user's intent.
+
+7. **OpenAPI**: 4 new portal paths + 1 webhook path + 3 schemas (BillingConfig, PaymentIntent, PaymentIntentCreated) added to `lib/api-spec/openapi.yaml`.
+
+**Required secrets** (not committed): `CHARGILY_SECRET_KEY`, `CHARGILY_WEBHOOK_SECRET`, `CHARGILY_MODE` (`test`|`live`, default `test`).
+
+**Webhook URL to configure in Chargily dashboard**: `https://<your-domain>/webhooks/chargily`.
+
 ### Session 31 — Polish: regression tests, skeleton loaders, dependabot, scheduled audit
 
 Four-item polish pass after the Session 30 hardening sprint. The regression tests immediately caught two real org-key isolation gaps that had been missed in P5/round-2.

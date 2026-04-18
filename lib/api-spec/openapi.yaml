@@ -916,6 +916,172 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /portal/billing/config:
+    get:
+      tags: [Billing]
+      summary: Get current Chargily top-up configuration
+      description: |
+        Returns the current DZD↔USD exchange rate, the min/max top-up bounds,
+        the gateway mode (test/live), and the accepted currency. Required to
+        render the top-up form correctly on the client.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Billing config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingConfig"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /portal/billing/topup:
+    post:
+      tags: [Billing]
+      summary: Create a Chargily checkout session for a credit top-up
+      description: |
+        Creates a `payment_intent` row, calls Chargily Pay V2 to open a hosted
+        checkout, and returns the redirect URL. The user is then expected to
+        complete payment on Chargily's hosted page. Credits are added only
+        when the matching webhook arrives and HMAC-verifies (CAS-idempotent).
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amountDzd]
+              properties:
+                amountDzd:
+                  type: integer
+                  description: Amount in Algerian Dinars. Must satisfy min/max from /portal/billing/config.
+      responses:
+        "201":
+          description: Checkout created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentIntentCreated"
+        "400":
+          description: Validation error (amount out of bounds, malformed body)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /portal/billing/intents:
+    get:
+      tags: [Billing]
+      summary: List the caller's payment intents
+      description: Most recent first. Used to render the user's transaction history.
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Intents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PaymentIntent"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /portal/billing/intents/{id}:
+    get:
+      tags: [Billing]
+      summary: Retrieve one of the caller's payment intents
+      description: |
+        Fetches a single intent. If the intent is still pending and >30s old,
+        the server may consult the live Chargily checkout to refresh the
+        display status — but crediting itself happens **only** through the
+        webhook to preserve the idempotency invariant.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Intent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentIntent"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Not found or not owned by caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /webhooks/chargily:
+    post:
+      tags: [Webhooks]
+      summary: Chargily Pay V2 webhook receiver (HMAC verified)
+      description: |
+        Receives `checkout.paid`, `checkout.failed`, etc. events from
+        Chargily Pay. The body is consumed as raw bytes and the
+        `signature` header is verified against `CHARGILY_WEBHOOK_SECRET`
+        using HMAC-SHA256 with constant-time comparison.
+
+        Crediting `topupCreditBalance` uses a CAS UPDATE on
+        `payment_intents.status='pending'` so concurrent or replayed
+        deliveries can never double-credit. Replays are also blocked by a
+        UNIQUE constraint on `chargily_webhook_events.event_id`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, type, data]
+              properties:
+                id: { type: string }
+                type: { type: string, example: "checkout.paid" }
+                data:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    status: { type: string }
+      parameters:
+        - name: signature
+          in: header
+          required: true
+          schema:
+            type: string
+            description: HMAC-SHA256 hex digest of the raw body using CHARGILY_WEBHOOK_SECRET.
+      responses:
+        "200":
+          description: Event accepted (always 200 for accepted-then-ignored cases too — `received: true`).
+        "400":
+          description: Empty/malformed body
+        "401":
+          description: Bad or missing signature
+
 components:
   schemas:
     # ─── Shared ───────────────────────────────────────────────────────────
@@ -1591,3 +1757,63 @@ components:
         message:
           type: string
       required: [success, message]
+
+    BillingConfig:
+      type: object
+      required: [dzdToUsdRate, minTopupDzd, maxTopupDzd, mode, currency]
+      properties:
+        dzdToUsdRate:
+          type: number
+          description: Number of DZD per 1 USD (e.g. 135).
+        minTopupDzd:
+          type: integer
+        maxTopupDzd:
+          type: integer
+        mode:
+          type: string
+          enum: [test, live]
+        currency:
+          type: string
+          example: dzd
+
+    PaymentIntent:
+      type: object
+      required: [id, chargilyCheckoutId, amountDzd, amountUsd, exchangeRate, currency, status, mode, createdAt]
+      properties:
+        id: { type: integer }
+        chargilyCheckoutId: { type: string }
+        amountDzd: { type: integer }
+        amountUsd: { type: number }
+        exchangeRate: { type: number }
+        currency: { type: string }
+        status:
+          type: string
+          enum: [pending, paid, failed, canceled, expired]
+        mode:
+          type: string
+          enum: [test, live]
+        checkoutUrl:
+          type: string
+          nullable: true
+        creditedAt:
+          type: string
+          format: date-time
+          nullable: true
+        failureReason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    PaymentIntentCreated:
+      type: object
+      required: [intentId, checkoutUrl, amountDzd, amountUsd, status]
+      properties:
+        intentId: { type: integer }
+        checkoutUrl: { type: string }
+        amountDzd: { type: integer }
+        amountUsd: { type: number }
+        status:
+          type: string
+          enum: [pending]

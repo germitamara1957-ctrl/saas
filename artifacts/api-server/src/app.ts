@@ -121,6 +121,11 @@ app.use(
 );
 
 // ── Body parsing ─────────────────────────────────────────────────────────────
+// Webhook routes need raw body for HMAC verification — must be registered
+// BEFORE express.json() consumes the body. Mount at both /webhooks and
+// /api/webhooks so the routes work regardless of mount path.
+app.use("/webhooks/chargily", express.raw({ type: "application/json", limit: "1mb" }));
+app.use("/api/webhooks/chargily", express.raw({ type: "application/json", limit: "1mb" }));
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 app.use(cookieParser());
