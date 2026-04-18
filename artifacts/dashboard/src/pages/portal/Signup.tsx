@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -26,13 +26,44 @@ interface ApiKeyPayload {
   planName: string;
 }
 
+const REF_STORAGE_KEY = "ai_gw_ref_code";
+const REF_STORAGE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+
+function readStoredRef(): string | null {
+  try {
+    const raw = localStorage.getItem(REF_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { code: string; savedAt: number };
+    if (!parsed?.code || Date.now() - parsed.savedAt > REF_STORAGE_TTL_MS) {
+      localStorage.removeItem(REF_STORAGE_KEY);
+      return null;
+    }
+    return parsed.code;
+  } catch {
+    return null;
+  }
+}
+
 export default function PortalSignup() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { login, isAuthenticated, user } = useAuth();
   const { toast } = useToast();
   const { t } = useTranslation();
   const register = usePortalRegister();
   const isAr = i18n.language === "ar";
+
+  // Capture ?ref=CODE on mount and persist it for 30 days so the user can
+  // browse other pages (Plans, Pricing) before signing up.
+  const refFromUrl = useMemo(() => searchParams.get("ref"), [searchParams]);
+  useEffect(() => {
+    if (refFromUrl) {
+      try {
+        localStorage.setItem(REF_STORAGE_KEY, JSON.stringify({ code: refFromUrl, savedAt: Date.now() }));
+      } catch { /* localStorage might be disabled */ }
+    }
+  }, [refFromUrl]);
+  const activeRefCode = refFromUrl ?? readStoredRef();
 
   const signupSchema = z.object({
     name: z.string().min(2, isAr ? "الاسم يجب أن يكون حرفين على الأقل" : "Name must be at least 2 characters"),
@@ -77,9 +108,12 @@ export default function PortalSignup() {
 
   const onSubmit = ({ name, email, password }: SignupForm) => {
     register.mutate(
-      { data: { name, email, password } },
+      // refCode is sent loosely — backend treats it as optional, validates,
+      // and silently ignores invalid/self-referral codes.
+      { data: { name, email, password, ...(activeRefCode ? { refCode: activeRefCode } : {}) } as never },
       {
         onSuccess: (res) => {
+          try { localStorage.removeItem(REF_STORAGE_KEY); } catch { /* ignore */ }
           const payload = (res as typeof res & { apiKey?: ApiKeyPayload }).apiKey;
           if (payload) {
             setPendingUser(res.user);
@@ -116,6 +150,16 @@ export default function PortalSignup() {
           <CardDescription>
             {isAr ? "ابدأ باستخدام Gemini وImagen وVeo في دقائق." : "Start using Gemini, Imagen, and Veo APIs in minutes."}
           </CardDescription>
+          {activeRefCode && (
+            <div className="mt-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+              <span>
+                {isAr
+                  ? <>تمت دعوتك بكود إحالة <code className="font-mono font-semibold">{activeRefCode}</code></>
+                  : <>You were invited with referral code <code className="font-mono font-semibold">{activeRefCode}</code></>}
+              </span>
+            </div>
+          )}
         </CardHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)}>

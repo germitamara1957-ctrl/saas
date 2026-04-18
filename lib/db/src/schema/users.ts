@@ -1,4 +1,4 @@
-import { pgTable, serial, text, boolean, timestamp, doublePrecision, numeric, integer, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, boolean, timestamp, doublePrecision, numeric, integer, index, varchar, AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { plansTable } from "./plans";
@@ -35,6 +35,11 @@ export const usersTable = pgTable("users", {
   monthlySpendLimitUsd: numeric("monthly_spend_limit_usd", { precision: 18, scale: 8, mode: "number" }),
   spendAlertThreshold: doublePrecision("spend_alert_threshold").notNull().default(0.8),
   spendAlertEmailSentAt: timestamp("spend_alert_email_sent_at", { withTimezone: true }),
+  // Referral system (Phase 1). `referralCode` is the user's own shareable
+  // code (8-char base32, generated lazily). `referredBy` is set ONCE at signup
+  // when the user arrives via someone else's link, and never changes after.
+  referralCode: varchar("referral_code", { length: 16 }).unique(),
+  referredBy: integer("referred_by").references((): AnyPgColumn => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [
@@ -42,6 +47,7 @@ export const usersTable = pgTable("users", {
   index("users_role_idx").on(table.role),
   index("users_email_verification_token_idx").on(table.emailVerificationToken),
   index("users_password_reset_token_idx").on(table.passwordResetToken),
+  index("users_referred_by_idx").on(table.referredBy),
 ]);
 
 export const insertUserSchema = createInsertSchema(usersTable).omit({

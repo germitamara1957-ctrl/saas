@@ -37,6 +37,7 @@ const PortalApiKeys = lazy(() => import("@/pages/portal/ApiKeys"));
 const PortalPlans = lazy(() => import("@/pages/portal/Plans"));
 const PortalBilling = lazy(() => import("@/pages/portal/Billing"));
 const PortalBillingResult = lazy(() => import("@/pages/portal/BillingResult"));
+const PortalReferrals = lazy(() => import("@/pages/portal/Referrals"));
 const PortalDocs = lazy(() => import("@/pages/portal/Docs"));
 const PortalSettings = lazy(() => import("@/pages/portal/Settings"));
 const PortalWebhooks = lazy(() => import("@/pages/portal/Webhooks"));
@@ -114,6 +115,7 @@ function PortalRoutes() {
               <Route path="plans" element={<PortalPlans />} />
               <Route path="billing" element={<PortalBilling />} />
               <Route path="billing/result" element={<PortalBillingResult />} />
+              <Route path="referrals" element={<PortalReferrals />} />
               <Route path="usage" element={<PortalUsage />} />
               <Route path="webhooks" element={<PortalWebhooks />} />
               <Route path="logs" element={<PortalLogs />} />

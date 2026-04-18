@@ -24,6 +24,7 @@ import portalLogsRouter from "./portal/logs";
 import portalOrganizationsRouter from "./portal/organizations";
 import portalDocsRouter from "./portal/docs";
 import portalBillingRouter from "./portal/billing";
+import portalReferralsRouter from "./portal/referrals";
 import adminChargilyRouter from "./admin/chargily";
 import chargilyWebhookRouter from "./webhooks/chargily";
 
@@ -90,6 +91,7 @@ router.use("/portal/webhooks", requireAuth);
 router.use("/portal/logs", requireAuth);
 router.use("/portal/organizations", requireAuth);
 router.use("/portal/billing", requireAuth);
+router.use("/portal/referrals", requireAuth);
 router.use(portalMeRouter);
 router.use(portalUsageRouter);
 router.use(portalPromoCodesRouter);
@@ -97,6 +99,7 @@ router.use(portalWebhooksRouter);
 router.use(portalLogsRouter);
 router.use(portalOrganizationsRouter);
 router.use(portalBillingRouter);
+router.use(portalReferralsRouter);
 
 // Webhook receivers (no auth — verified via HMAC inside the handler).
 router.use(chargilyWebhookRouter);

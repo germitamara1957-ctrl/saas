@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Activity, Key, CreditCard, BookOpen, LogOut, Moon, Sun, Languages, Settings, Webhook, FileText, Users, Wallet } from "lucide-react";
+import { LayoutDashboard, Activity, Key, CreditCard, BookOpen, LogOut, Moon, Sun, Languages, Settings, Webhook, FileText, Users, Wallet, Gift } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { useTranslation } from "react-i18next";
@@ -20,6 +20,7 @@ export function PortalLayout({ children }: { children: ReactNode }) {
     { name: t("nav.apiKeys") || "API Keys", href: "/portal/api-keys", icon: Key, exact: false },
     { name: t("nav.plans") || "Plans", href: "/portal/plans", icon: CreditCard, exact: false },
     { name: isAr ? "شحن الرصيد" : "Top up", href: "/portal/billing", icon: Wallet, exact: false },
+    { name: isAr ? "الإحالة" : "Referrals", href: "/portal/referrals", icon: Gift, exact: false },
     { name: t("nav.usage"), href: "/portal/usage", icon: Activity, exact: false },
     { name: "Webhooks", href: "/portal/webhooks", icon: Webhook, exact: false },
     { name: "Logs", href: "/portal/logs", icon: FileText, exact: false },

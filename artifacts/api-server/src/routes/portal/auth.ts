@@ -196,6 +196,13 @@ router.post("/portal/auth/register", async (req, res): Promise<void> => {
       planName: string;
     } | null = null;
 
+    // Optional referral code from the signup page (?ref=ABC123 → cookie/body).
+    // We accept it loosely (not part of the codegen schema yet) and validate
+    // inside captureSignupReferral. Self-referral and unknown codes are no-ops.
+    const refCodeRaw = typeof (req.body as { refCode?: unknown })?.refCode === "string"
+      ? (req.body as { refCode: string }).refCode
+      : null;
+
     await db.transaction(async (tx) => {
       const [newUser] = await tx
         .insert(usersTable)
@@ -237,6 +244,18 @@ router.post("/portal/auth/register", async (req, res): Promise<void> => {
         };
       }
     });
+
+    // Capture referral after the transaction so a failure here doesn't
+    // roll back the registration. captureSignupReferral is idempotent and
+    // self-validates the code.
+    if (refCodeRaw) {
+      try {
+        const { captureSignupReferral } = await import("../../lib/referrals");
+        await captureSignupReferral(user!.id, refCodeRaw);
+      } catch (err) {
+        logger.warn({ err, userId: user!.id }, "captureSignupReferral failed (non-fatal)");
+      }
+    }
 
     const appBaseUrl = await getAppBaseUrl(req);
     const emailContent = buildVerificationEmail(name, verificationToken, appBaseUrl);

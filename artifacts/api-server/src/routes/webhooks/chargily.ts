@@ -157,6 +157,22 @@ router.post(
       });
 
       logger.info({ intentId: credited.id, userId: credited.userId, amountUsd: credited.amountUsd }, "Chargily top-up credited");
+
+      // Referral commission (Phase 1) — basis is the actual USD revenue
+      // (NOT the credit value granted to the user). Failure here must not
+      // affect the credit operation, so we swallow errors.
+      try {
+        const { recordReferralEarning } = await import("../../lib/referrals");
+        await recordReferralEarning({
+          referredUserId: credited.userId,
+          sourceType: "topup",
+          sourceId: credited.id,
+          basisAmountUsd: Number(credited.amountUsd),
+        });
+      } catch (err) {
+        logger.warn({ err, intentId: credited.id }, "Referral earning recording failed (non-fatal)");
+      }
+
       res.status(200).json({ received: true, credited: true });
       return;
     }
@@ -173,6 +189,45 @@ router.post(
           eq(paymentIntentsTable.id, intent.id),
           eq(paymentIntentsTable.status, "pending"),
         ));
+      res.status(200).json({ received: true, status: checkoutStatus });
+      return;
+    }
+
+    // Refund/dispute path — Chargily reports a previously-paid intent as
+    // refunded or disputed. We mark the intent and clawback any referral
+    // commission tied to it. We do NOT debit the user's topup balance here
+    // because refund-money-flow is handled out-of-band by finance/admin.
+    if (checkoutStatus === "refunded" || checkoutStatus === "disputed") {
+      await db
+        .update(paymentIntentsTable)
+        .set({
+          status: checkoutStatus,
+          webhookReceivedAt: new Date(),
+          failureReason: `Chargily reported: ${checkoutStatus}`,
+        })
+        .where(eq(paymentIntentsTable.id, intent.id));
+
+      try {
+        const { reverseReferralEarning } = await import("../../lib/referrals");
+        const result = await reverseReferralEarning("topup", intent.id);
+        if (result.reversed) {
+          await db.insert(auditLogsTable).values({
+            action: "referral.reversed",
+            actorId: intent.userId,
+            targetId: intent.id,
+            details: JSON.stringify({
+              reason: checkoutStatus,
+              clawbackUsd: result.clawbackUsd,
+              checkoutId,
+              eventId,
+            }),
+            ip: req.ip,
+          });
+        }
+      } catch (err) {
+        logger.error({ err, intentId: intent.id }, "Referral reversal failed");
+      }
+
       res.status(200).json({ received: true, status: checkoutStatus });
       return;
     }
