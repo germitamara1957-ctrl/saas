@@ -369,9 +369,10 @@ router.post("/admin/users/:id/upgrade-plan", requireAdmin, async (req, res): Pro
       .update(usersTable)
       .set({
         currentPlanId: planIdNum,
-        // Subscription credit replaces (not adds) on plan upgrade — keeps semantics clean.
-        // The freshly-granted monthly amount represents the new plan's allowance.
-        creditBalance: sql`${creditsToAdd}`,
+        // Subscription credit ACCUMULATES on plan change so unused credit from
+        // a prior plan (e.g. Pro) is preserved when upgrading (e.g. to Enterprise).
+        // Set creditsToAdd=0 from admin UI ("addCredits=false") to avoid double-grant.
+        creditBalance: sql`${usersTable.creditBalance} + ${creditsToAdd}`,
         // Reset the subscription window to a fresh 30-day cycle.
         currentPeriodStartedAt: nowTs,
         currentPeriodEnd: periodEnd,

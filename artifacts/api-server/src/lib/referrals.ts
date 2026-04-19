@@ -1,4 +1,4 @@
-import { eq, and, sql, sum, count, desc } from "drizzle-orm";
+import { eq, and, sql, sum, count, desc, inArray } from "drizzle-orm";
 import { db, usersTable, referralEarningsTable } from "@workspace/db";
 import { getSettingValue } from "../routes/admin/settings";
 import { logger } from "./logger";
@@ -396,7 +396,7 @@ export async function redeemAvailableEarnings(referrerId: number): Promise<{
       .where(and(
         eq(referralEarningsTable.referrerId, referrerId),
         eq(referralEarningsTable.status, "available"),
-        sql`${referralEarningsTable.id} = ANY(${ids})`,
+        inArray(referralEarningsTable.id, ids),
       ))
       .returning({ id: referralEarningsTable.id });
 
