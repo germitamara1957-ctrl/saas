@@ -4,7 +4,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Save, Mail, CheckCircle2, Send, Globe, Video, Plus, Trash2, ShieldCheck, KeyRound, Copy, Webhook, Power } from "lucide-react";
+import { Loader2, Save, Mail, CheckCircle2, Send, Globe, Video, Plus, Trash2, ShieldCheck, KeyRound, Copy, Webhook, Power, ShieldAlert } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 
 interface DocsVideo {
@@ -450,10 +451,131 @@ export default function AdminSettings() {
         </CardContent>
       </Card>
 
+      <EmailPolicyCard />
+
       <ChargilySecretsCard />
 
       <TwoFactorCard />
     </div>
+  );
+}
+
+function EmailPolicyCard() {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [allowed, setAllowed] = useState("");
+  const [blocked, setBlocked] = useState("");
+  const [blockDisposable, setBlockDisposable] = useState(true);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/admin/settings`, { credentials: "include" })
+      .then((r) => r.json() as Promise<Record<string, unknown>>)
+      .then((d) => {
+        setAllowed(typeof d.signup_allowed_email_domains === "string" ? d.signup_allowed_email_domains : "");
+        setBlocked(typeof d.signup_blocked_email_domains === "string" ? d.signup_blocked_email_domains : "");
+        setBlockDisposable(d.signup_block_disposable == null ? true : d.signup_block_disposable !== "false");
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await saveSettings({
+        signup_allowed_email_domains: allowed.trim(),
+        signup_blocked_email_domains: blocked.trim(),
+        signup_block_disposable: blockDisposable ? "true" : "false",
+      });
+      toast({ title: "Saved", description: "Email signup policy updated." });
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Failed to save",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <ShieldAlert className="h-5 w-5 text-primary" />
+          <CardTitle>Signup Email Policy</CardTitle>
+        </div>
+        <CardDescription>
+          Restrict which email addresses can register. Useful to prevent spam and bulk
+          signups from disposable email services.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loading ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="allowed-domains">
+                Allowed domains <span className="text-xs text-muted-foreground">(comma separated, leave empty to allow all)</span>
+              </Label>
+              <Textarea
+                id="allowed-domains"
+                placeholder="gmail.com, outlook.com, hotmail.com, yahoo.com"
+                value={allowed}
+                onChange={(e) => setAllowed(e.target.value)}
+                rows={2}
+                data-testid="input-allowed-domains"
+              />
+              <p className="text-xs text-muted-foreground">
+                If set, ONLY these domains can register. Strict allowlist mode.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="blocked-domains">
+                Blocked domains <span className="text-xs text-muted-foreground">(comma separated)</span>
+              </Label>
+              <Textarea
+                id="blocked-domains"
+                placeholder="example.com, spammer.io"
+                value={blocked}
+                onChange={(e) => setBlocked(e.target.value)}
+                rows={2}
+                data-testid="input-blocked-domains"
+              />
+              <p className="text-xs text-muted-foreground">
+                Always rejected, regardless of allowlist.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between rounded-md border p-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="block-disposable" className="cursor-pointer">
+                  Block disposable / temporary emails
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Built-in blocklist of mailinator, tempmail, yopmail, guerrillamail, and ~80 others.
+                </p>
+              </div>
+              <Switch
+                id="block-disposable"
+                checked={blockDisposable}
+                onCheckedChange={setBlockDisposable}
+                data-testid="switch-block-disposable"
+              />
+            </div>
+
+            <Button onClick={handleSave} disabled={saving} data-testid="button-save-email-policy">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+              Save Policy
+            </Button>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

@@ -11,6 +11,7 @@ import { randomBytes } from "node:crypto";
 import { logger } from "../../lib/logger";
 import { requireAuth } from "../../middlewares/adminAuth";
 import { getSettingValue } from "../admin/settings";
+import { validateSignupEmail } from "../../lib/emailPolicy";
 
 async function getAppBaseUrl(req?: import("express").Request): Promise<string> {
   const override = await getSettingValue("app_base_url").catch(() => null);
@@ -150,6 +151,17 @@ router.post("/portal/auth/register", async (req, res): Promise<void> => {
   }
 
   const { name, email, password } = parsed.data;
+
+  // Email policy gate: allowlist / blocklist / disposable filter (configured
+  // via /admin/settings → signup_allowed_email_domains, signup_blocked_email_domains,
+  // signup_block_disposable). Runs before rate limit so spammers don't burn the IP quota.
+  const policyCheck = await validateSignupEmail(email);
+  if (!policyCheck.ok) {
+    const acceptLang = String(req.headers["accept-language"] ?? "").toLowerCase();
+    const isAr = acceptLang.startsWith("ar");
+    res.status(400).json({ error: (isAr ? policyCheck.reasonAr : policyCheck.reason) ?? policyCheck.reason });
+    return;
+  }
 
   try {
     const limitCheck = await checkRegistrationLimit(ip);

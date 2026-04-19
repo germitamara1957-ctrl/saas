@@ -17,6 +17,9 @@ const ALLOWED_KEYS = new Set([
   "smtp_from",
   "app_base_url",
   "docs_videos",
+  "signup_allowed_email_domains",
+  "signup_blocked_email_domains",
+  "signup_block_disposable",
 ]);
 
 const httpUrl = z
@@ -49,6 +52,9 @@ const UpdateSettingsBody = z.object({
   smtp_from: z.string().max(320).optional(),
   app_base_url: z.string().url().max(2048).optional(),
   docs_videos: z.array(DocsVideoSchema).max(50).optional(),
+  signup_allowed_email_domains: z.string().max(2000).optional(),
+  signup_blocked_email_domains: z.string().max(2000).optional(),
+  signup_block_disposable: z.union([z.boolean(), z.enum(["true", "false"])]).optional(),
 });
 
 const JSON_KEYS = new Set(["docs_videos"]);
@@ -120,6 +126,12 @@ router.put("/admin/settings", requireAdmin, async (req, res): Promise<void> => {
         target: systemSettingsTable.key,
         set: { value: row.value, encrypted: row.encrypted },
       });
+  }
+
+  // Invalidate caches for any setting groups that were touched.
+  if (upserts.some((u) => u.key.startsWith("signup_"))) {
+    const { invalidateEmailPolicyCache } = await import("../../lib/emailPolicy");
+    invalidateEmailPolicyCache();
   }
 
   res.json({ ok: true });
