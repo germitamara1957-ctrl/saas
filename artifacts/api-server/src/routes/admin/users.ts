@@ -12,6 +12,8 @@ import {
 import { requireAdmin } from "../../middlewares/adminAuth";
 import { hashPassword } from "../../lib/crypto";
 import { logAuditEvent } from "./auditLog";
+import { recordReferralEarning } from "../../lib/referrals";
+import { logger } from "../../lib/logger";
 
 const router: IRouter = Router();
 
@@ -399,6 +401,28 @@ router.post("/admin/users/:id/upgrade-plan", requireAdmin, async (req, res): Pro
     details: `Upgraded to plan "${plan.name}" (id ${planIdNum}); added $${creditsToAdd} credits`,
     ip: getIp(req),
   });
+
+  // Referral commission — basis is the *plan's USD price* (revenue), NOT the credit value granted.
+  // Idempotency key combines user+plan+period-start so re-upgrading in a new billing period
+  // creates a new earning, but a duplicate click in the same second is dedup'd by UNIQUE(source_type, source_id).
+  if (plan.priceUsd > 0) {
+    try {
+      const periodStartTs = (await db.select({ ts: usersTable.currentPeriodStartedAt })
+        .from(usersTable).where(eq(usersTable.id, user.id)).limit(1))[0]?.ts;
+      const sourceId = `${user.id}:${planIdNum}:${periodStartTs ? periodStartTs.getTime() : Date.now()}`;
+      const result = await recordReferralEarning({
+        referredUserId: user.id,
+        sourceType: "plan",
+        sourceId,
+        basisAmountUsd: plan.priceUsd,
+      });
+      if (result) {
+        logger.info({ userId: user.id, referrerId: result.referrerId, commissionUsd: result.commissionUsd, planId: planIdNum }, "referral.commission.recorded.plan");
+      }
+    } catch (err) {
+      logger.error({ err, userId: user.id, planId: planIdNum }, "referral.commission.failed.plan");
+    }
+  }
 
   res.json({
     id: user.id,
