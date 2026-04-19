@@ -41,11 +41,11 @@ Includes a full admin dashboard and a developer self-service portal, with Arabic
 
 ---
 
-## DB Schema (17 tables)
+## DB Schema (19 tables)
 
 | Table | Purpose |
 |---|---|
-| `users` | Auth, roles, **dual credit balances** (`credit_balance` = subscription, `topup_credit_balance` = top-up), email verification, password reset, low-credit email timestamp |
+| `users` | Auth, roles, **dual credit balances** (`credit_balance` = subscription, `topup_credit_balance` = top-up), email verification, password reset, low-credit email timestamp, **`referral_code` (varchar(16) unique)**, **`referred_by` (int FK→users.id)** |
 | `api_keys` | Keys linked to users/plans; HMAC hash + AES-256-GCM encrypted value |
 | `plans` | Tiers: monthly credits, RPM, allowed model list, price |
 | `usage_logs` | Immutable request records (tokens, cost, model, status) |
@@ -62,6 +62,9 @@ Includes a full admin dashboard and a developer self-service portal, with Arabic
 | `organizations` | Teams/orgs with own credit pool (foundation; org-owned API keys opt-in via `api_keys.organization_id`) |
 | `organization_members` | Composite-PK org↔user with role enum (owner / admin / developer / viewer) |
 | `organization_invites` | Pending email invites with token + expiry, accepted-at timestamp |
+| `payment_intents` | Chargily Pay V2 top-up intents (DZD→USD, status pending/paid/failed/canceled/expired/refunded/disputed) |
+| `chargily_webhook_events` | Webhook event ledger (UNIQUE on eventId — replay protection) |
+| `referral_earnings` | Per-payment referral commissions. UNIQUE(`source_type`, `source_id`) for race-safe idempotency. Status: `pending`→`available`→`redeemed` (or `reversed` on refund/dispute). Basis = **actual USD paid** (NOT credit value granted) |
 
 ---
 
@@ -131,6 +134,11 @@ Includes a full admin dashboard and a developer self-service portal, with Arabic
 | POST | `/portal/promo-codes/redeem` | Redeem promo code |
 | GET/POST/PUT/DELETE | `/portal/webhooks` | Webhook CRUD |
 | POST | `/portal/webhooks/:id/test` | Send test webhook event |
+| GET | `/portal/billing/config` | Top-up min/max + DZD↔USD rate |
+| POST | `/portal/billing/topup` | Create Chargily checkout intent (returns `checkoutUrl`) |
+| GET | `/portal/billing/intents[/:id]` | List / view top-up history |
+| GET | `/portal/referrals` | Referral code, link, stats (referredCount, pendingUsd, availableUsd, lifetimeUsd, redeemedUsd), recent earnings |
+| POST | `/portal/referrals/redeem` | Move available commissions → `topupCreditBalance` (CAS transactional, $10 min) |
 | GET/POST | `/portal/organizations` | List my orgs / create new org (creator → owner) |
 | GET/PATCH/DELETE | `/portal/organizations/:id` | Org details + members / rename / delete (owner only) |
 | GET/POST/DELETE | `/portal/organizations/:id/invites[/:inviteId]` | Manage email invites (owner/admin) |
@@ -152,6 +160,11 @@ Includes a full admin dashboard and a developer self-service portal, with Arabic
 | GET/POST/PUT/DELETE | `/admin/api-keys` | API key admin |
 | GET/POST/PUT/DELETE | `/admin/promo-codes` | Promo code management |
 | GET/POST/PATCH/DELETE | `/admin/incidents` | Status-page incident CRUD |
+| GET | `/admin/billing/chargily/balance` | Chargily merchant balance |
+| GET/PUT | `/admin/billing/chargily/settings` | DZD↔USD rate, min/max top-up |
+| GET | `/admin/referrals` | Settings + totals + top referrers (×50) + recent earnings (×100) |
+| PATCH | `/admin/referrals/settings` | Toggle program, set rate / hold days / min redeem |
+| POST | `/admin/referrals/:id/reverse` | Manually reverse an earning (auto-clawback if redeemed) |
 
 ---
 
@@ -184,7 +197,15 @@ Includes a full admin dashboard and a developer self-service portal, with Arabic
 | `artifacts/dashboard/src/pages/admin/Plans.tsx` | Plan management + ModelPicker (comingSoon = disabled) |
 | `artifacts/dashboard/src/pages/admin/Pricing.tsx` | Model cost management (1.1× markup display) |
 | `lib/db/src/schema/webhooks.ts` | Webhooks table schema |
-| `lib/db/src/schema/` | All 12 Drizzle schema files |
+| `lib/db/src/schema/referral-earnings.ts` | Referral earnings table (DB-level UNIQUE on `source_type`+`source_id` for idempotency) |
+| `lib/db/src/schema/` | All 19 Drizzle schema files |
+| `artifacts/api-server/src/lib/referrals.ts` | Code generation, `recordReferralEarning` (ON CONFLICT DO NOTHING), `reverseReferralEarning` (with clawback), `redeemAvailableEarnings` (CAS transactional), `promotePendingEarnings` |
+| `artifacts/api-server/src/lib/chargily.ts` | Chargily Pay V2 HTTP client with HMAC verify (timing-safe) |
+| `artifacts/api-server/src/routes/portal/referrals.ts` | Portal referral endpoints (stats + redeem) |
+| `artifacts/api-server/src/routes/admin/referrals.ts` | Admin referral panel endpoints (settings, top referrers, manual reverse) |
+| `artifacts/api-server/src/routes/webhooks/chargily.ts` | Raw-body HMAC-verified webhook (records earnings on `paid`, reverses on `refunded`/`disputed`) |
+| `artifacts/dashboard/src/pages/portal/Referrals.tsx` | Portal referral page (code/link share, WhatsApp, stats cards, history, redeem) |
+| `artifacts/dashboard/src/pages/admin/Referrals.tsx` | Admin panel (totals, editable settings, top referrers, recent earnings + manual reverse) |
 | `lib/api-zod/src/generated/api.ts` | Zod schemas — includes multimodal ChatContentPart |
 
 ---
@@ -246,7 +267,7 @@ pnpm --filter @workspace/db build             # Generates lib/db/dist/*.d.ts
 pnpm --filter @workspace/api-zod build        # Generates lib/api-zod/dist/*.d.ts
 
 # Tests
-pnpm --filter @workspace/api-server test      # 193 tests across 17 test files (~22s)
+pnpm --filter @workspace/api-server test      # 235 tests across 21 test files (~38s)
 
 # Typecheck
 pnpm -r typecheck                             # All 8 packages (0 errors)
@@ -256,15 +277,77 @@ pnpm -r typecheck                             # All 8 packages (0 errors)
 
 ## Payment / Credit Top-up
 
-Stripe integration was dismissed by the user. If credit top-up (pay-as-you-go) is needed in the future:
-- Option A: Re-authorize the Replit Stripe connector (`connector:ccfg_stripe_01K611P4YQR0SZM11XFRQJC44Y`) via the Integrations panel
-- Option B: Provide `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` as Replit Secrets and implement top-up manually
+**Live**: Chargily Pay V2 (Algerian gateway, DZD→USD). See Session 32 for full details. Required secrets: `CHARGILY_SECRET_KEY`, `CHARGILY_WEBHOOK_SECRET`, `CHARGILY_MODE` (`test`|`live`).
 
-Do **not** hardcode any payment credentials. Always store them as Replit Secrets.
+**Webhook URL** to configure in Chargily dashboard: `https://<your-domain>/webhooks/chargily`.
+
+Stripe was previously dismissed; not in use. Do **not** hardcode any payment credentials.
+
+---
+
+## Referral Program (Session 33)
+
+- **Commission**: 8% (admin-editable) of **actual USD paid**, never of credit value granted.
+- **Hold window**: 14 days (admin-editable). Pending earnings ripen lazily on portal stats fetch.
+- **Min redeem**: $10 (admin-editable). Redeemed amounts are added to `topupCreditBalance`.
+- **Refund handling**: Chargily `refunded`/`disputed` webhooks trigger `reverseReferralEarning`. If the commission was already redeemed, the referrer's `topupCreditBalance` is debited (clawback) — balance is allowed to go negative; admin reconciles via the panel.
+- **Idempotency**: DB-level `UNIQUE(source_type, source_id)` on `referral_earnings` + `ON CONFLICT DO NOTHING` prevents duplicate commissions under concurrent webhook delivery.
+- **Self-referral**: Blocked at `recordReferralEarning` (silent no-op if `referrerId === referredUserId`).
+- **Share URL format**: `https://<base>/signup?ref=<CODE>`. The signup page persists `ref` in `localStorage` for 30 days so users can browse before registering.
 
 ---
 
 ## Recent Changes (Apr 2026)
+
+### Session 33 — Referral System Phase 1 (8% commission on real revenue)
+
+Adds a complete referral pipeline. Every user gets a unique 8-char base31 code (no confusable chars: I/L/O/0/1). Commission is **always** calculated on actual USD paid — `payment_intents.amountUsd` — never on the credit value granted to the referee. A $29 plan that grants $50 credit pays an $29 × 8% = $2.32 commission, NOT $50 × 8%.
+
+1. **Schema** (`lib/db/migrations/0010_referrals.sql`):
+   - `users` gains `referral_code varchar(16) UNIQUE` + `referred_by integer FK→users.id ON DELETE SET NULL`. Both nullable. `users.id` stayed `serial` — no destructive type changes.
+   - `referral_earnings` (serial id, referrer_id, referred_user_id, source_type [`topup`|`plan`], source_id, basis_amount_usd numeric(18,8), commission_usd numeric(18,8), rate numeric(6,4), status [`pending`|`available`|`redeemed`|`reversed`], unlocks_at, redeemed_at, created_at, updated_at).
+   - **DB-enforced idempotency**: `UNIQUE INDEX referral_earnings_source_uidx ON (source_type, source_id)`. Combined with `ON CONFLICT DO NOTHING` in the insert path, two concurrent webhook deliveries for the same payment can never both create an earning.
+   - 4 settings seeded (`ON CONFLICT DO NOTHING`): `referral_rate=0.08`, `referral_hold_days=14`, `referral_min_redeem_usd=10`, `referrals_enabled=true`.
+
+2. **Backend lib** (`artifacts/api-server/src/lib/referrals.ts`):
+   - `ensureReferralCode(userId)` — lazy generate-on-first-use, retries on UNIQUE collision.
+   - `captureSignupReferral(newUserId, refCode)` — sets `users.referred_by` once, silently no-ops on self-referral or unknown code.
+   - `recordReferralEarning({referredUserId, sourceType, sourceId, basisAmountUsd})` — atomic insert with `ON CONFLICT DO NOTHING`. Self-referral guard. Reads rate/holdDays from settings each call. Returns `{id, commissionUsd, referrerId}` or `null` (no referrer / duplicate / disabled).
+   - `reverseReferralEarning(sourceType, sourceId)` — transactional, `SELECT … FOR UPDATE`. Behavior depends on current status: `pending|available` → `reversed` (no money flow); `redeemed` → `reversed` + **clawback** from referrer's `topupCreditBalance` (allowed to go negative; admin reconciles); `reversed` → no-op.
+   - `redeemAvailableEarnings(userId)` — CAS transaction: locks all `available` rows, sums them, enforces `min_redeem_usd`, increments `topupCreditBalance`, marks rows `redeemed`. All-or-nothing.
+   - `promotePendingEarnings()` — flips `pending`→`available` for rows where `unlocks_at < now()`. Called lazily on portal stats fetch (no cron).
+
+3. **Hooks**:
+   - **Signup** (`routes/portal/auth.ts`): accepts optional `refCode` in request body, calls `captureSignupReferral` after the user-creation transaction commits. Failure is non-fatal (logged, not bubbled — registration still succeeds).
+   - **Chargily webhook** (`routes/webhooks/chargily.ts`):
+     - On `paid` (after CAS-protected credit grant): calls `recordReferralEarning("topup", intent.id, intent.amountUsd)`. Errors are caught and logged — the webhook still returns 200.
+     - On `refunded` / `disputed`: marks intent reversed, calls `reverseReferralEarning("topup", intent.id)`, writes `referral.reversed` audit row with clawback amount.
+
+4. **Portal endpoints** (`routes/portal/referrals.ts`, behind `requireAuth`):
+   - `GET /portal/referrals` — calls `promotePendingEarnings` first, then returns `{enabled, code, link, rate, holdDays, minRedeemUsd, stats:{referredCount, pendingUsd, availableUsd, redeemedUsd, reversedUsd, lifetimeUsd}, recent:[…20]}`.
+   - `POST /portal/referrals/redeem` — returns `{ok, redeemedUsd}` or 400 `min_not_met` / `nothing_available`.
+
+5. **Admin endpoints** (`routes/admin/referrals.ts`, behind `requireAdmin`):
+   - `GET /admin/referrals` — settings + platform totals + top 50 referrers (sorted by lifetime commission) + last 100 earnings. Single query per section.
+   - `PATCH /admin/referrals/settings` — validates and persists `enabled`, `rate` (0..1), `holdDays` (0..365 int), `minRedeemUsd` (≥0). Writes `referral.settings.update` audit log with diff.
+   - `POST /admin/referrals/:id/reverse` — manual reverse with audit. Frontend prompts for confirmation, especially when clawback may apply.
+
+6. **Frontend**:
+   - **Portal `/portal/referrals`** — stats cards (referred count / pending / available + redeem button / lifetime), share card (code + link inputs with copy buttons, WhatsApp share, native Web Share fallback), earnings history table with status badges (pending/available/redeemed/reversed). Bilingual AR/EN with RTL.
+   - **Signup `/signup`** — captures `?ref=CODE` from URL, persists in `localStorage` for 30 days under key `ai_gw_ref_code` (so users can browse Plans/Pricing before signing up), shows green invite banner when active code is detected, sends `refCode` field with registration request, clears storage on success. Sent loosely (`as never`) — backend reads `req.body.refCode` directly until openapi codegen catches up.
+   - **Sidebars**: "الإحالة / Referrals" entry added to both `PortalLayout.tsx` and `AdminLayout.tsx` with `Gift` icon.
+   - **Routes**: `referrals` added under both `/portal` and `/admin` in `App.tsx` with lazy import.
+
+7. **Code review fixes (financial integrity — applied before commit)**:
+   - Replaced non-unique `(source_type, source_id)` index with a true `UNIQUE INDEX` + `ON CONFLICT DO NOTHING` to make `recordReferralEarning` race-safe (was previously read-then-insert, vulnerable to concurrent webhook duplicates).
+   - Added `refunded` / `disputed` handling to webhook with full reverse + clawback pipeline (was previously falling through to "status not actionable").
+   - Created formal migration file `0010_referrals.sql` for deployment to fresh environments (originally applied via `psql` to avoid `drizzle-kit push --force` interactive prompt on existing 127 users).
+
+8. **Bonus chargily fix discovered during this session**: `buildWebhookUrl()` is async; added missing `await` in 2 call sites (`routes/admin/chargily.ts` lines 174, 241). The webhook URL was previously rendered as `[object Object]` in admin UI.
+
+**Tests**: 235/235 passing. No new tests added for referrals yet — Phase 2 will include E2E tests for capture, record, ripen, redeem, reverse, clawback.
+
+**Configuration**: All knobs live in `system_settings` and are admin-editable: `referrals_enabled`, `referral_rate`, `referral_hold_days`, `referral_min_redeem_usd`.
 
 ### Session 32 — Chargily Pay V2 integration (Algerian payment gateway)
 
