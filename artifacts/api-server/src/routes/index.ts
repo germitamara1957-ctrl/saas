@@ -14,6 +14,7 @@ import adminSettingsRouter from "./admin/settings";
 import adminTwoFaRouter from "./admin/twofa";
 import portalTwoFaRouter from "./portal/twofa";
 import adminIncidentsRouter from "./admin/incidents";
+import adminReferralsRouter from "./admin/referrals";
 
 import portalAuthRouter from "./portal/auth";
 import portalMeRouter from "./portal/me";
@@ -65,6 +66,7 @@ router.use("/admin/settings", adminRateLimit, requireAdmin);
 router.use("/admin/incidents", adminRateLimit, requireAdmin);
 router.use("/admin/2fa", adminRateLimit, requireAdmin);
 router.use("/admin/billing", adminRateLimit, requireAdmin);
+router.use("/admin/referrals", adminRateLimit, requireAdmin);
 router.use(adminProvidersRouter);
 router.use(adminPlansRouter);
 router.use(adminUsersRouter);
@@ -77,6 +79,7 @@ router.use(adminSettingsRouter);
 router.use(adminIncidentsRouter);
 router.use(adminTwoFaRouter);
 router.use(adminChargilyRouter);
+router.use(adminReferralsRouter);
 
 // Portal routes — login is public, /me /api-keys /usage require portal JWT
 router.use(portalAuthRouter);

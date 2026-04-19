@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Users, Key, BarChart3, Settings, LogOut, Cloud, Moon, Sun, Languages, DollarSign, Shield, Tag, SlidersHorizontal, AlertTriangle } from "lucide-react";
+import { LayoutDashboard, Users, Key, BarChart3, Settings, LogOut, Cloud, Moon, Sun, Languages, DollarSign, Shield, Tag, SlidersHorizontal, AlertTriangle, Gift } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "@/lib/theme";
@@ -26,6 +26,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
     { name: t("nav.pricing"), href: "/admin/pricing", icon: DollarSign, exact: false },
     { name: "Audit Log", href: "/admin/audit-log", icon: Shield, exact: false },
     { name: t("nav.promoCodes"), href: "/admin/promo-codes", icon: Tag, exact: false },
+    { name: isAr ? "الإحالة" : "Referrals", href: "/admin/referrals", icon: Gift, exact: false },
     { name: t("nav.incidents") || "Incidents", href: "/admin/incidents", icon: AlertTriangle, exact: false },
     { name: "Settings", href: "/admin/settings", icon: SlidersHorizontal, exact: false },
   ];

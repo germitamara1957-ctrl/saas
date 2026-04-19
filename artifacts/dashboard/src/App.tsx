@@ -27,6 +27,7 @@ const AdminProviders = lazy(() => import("@/pages/admin/Providers"));
 const AdminPricing = lazy(() => import("@/pages/admin/Pricing"));
 const AdminAuditLog = lazy(() => import("@/pages/admin/AuditLog"));
 const AdminPromoCodes = lazy(() => import("@/pages/admin/PromoCodes"));
+const AdminReferrals = lazy(() => import("@/pages/admin/Referrals"));
 const AdminSettings = lazy(() => import("@/pages/admin/Settings"));
 const AdminIncidents = lazy(() => import("@/pages/admin/Incidents"));
 
@@ -92,6 +93,7 @@ function AdminRoutes() {
               <Route path="pricing" element={<AdminPricing />} />
               <Route path="audit-log" element={<AdminAuditLog />} />
               <Route path="promo-codes" element={<AdminPromoCodes />} />
+              <Route path="referrals" element={<AdminReferrals />} />
               <Route path="settings" element={<AdminSettings />} />
               <Route path="incidents" element={<AdminIncidents />} />
             </Routes>
