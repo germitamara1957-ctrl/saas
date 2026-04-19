@@ -28,6 +28,8 @@
 | **لوحة أدمن كاملة** | Developers · Plans · Pricing · Providers · Analytics · Audit Log · Promo Codes |
 | **i18n كامل** | عربي (RTL) + إنجليزي مع تبديل فوري |
 | **رموز ترويجية** | Promo Codes بقيمة ثابتة أو نسبة مئوية مع حد للاستخدام |
+| **شحن الرصيد (Chargily Pay V2)** | بوابة دفع جزائرية DZD→USD، HMAC-verified webhook، CAS idempotent (لا تكرار حتى مع الإعادات) |
+| **برنامج الإحالة** | عمولة 8% (قابلة للتعديل) محسوبة على **المبلغ المدفوع فعلياً** لا على الرصيد الممنوح. حجز 14 يوماً، حد أدنى للسحب $10، استرداد تلقائي عند refund/dispute مع clawback، لوحات تحكم منفصلة للمطوّر والإدمن |
 
 ---
 
@@ -236,11 +238,11 @@ curl -H "Authorization: Bearer sk-xxx" https://your-domain.replit.app/v1/models
 
 ---
 
-## قاعدة البيانات (17 جدول)
+## قاعدة البيانات (19 جدول)
 
 | الجدول | الغرض |
 |--------|-------|
-| `users` | مصادقة · أدوار · **رصيدان (اشتراك + إضافي)** · تحقق البريد |
+| `users` | مصادقة · أدوار · **رصيدان (اشتراك + إضافي)** · تحقق البريد · `referral_code` · `referred_by` |
 | `webhooks` | webhooks الخاصة بالمستخدم مع HMAC-SHA256 secret |
 | `api_keys` | مفاتيح مرتبطة بالمستخدمين/الخطط، مشفرة |
 | `plans` | خطط الاشتراك: credits · RPM · نماذج مسموح بها |
@@ -252,6 +254,11 @@ curl -H "Authorization: Bearer sk-xxx" https://your-domain.replit.app/v1/models
 | `audit_logs` | سجل عمليات الأدمن |
 | `promo_codes` | رموز ترويجية |
 | `violation_logs` | سجل انتهاكات المحتوى |
+| `payment_intents` | عمليات شحن Chargily Pay V2 (DZD→USD، الحالة pending/paid/failed/refunded) |
+| `chargily_webhook_events` | سجل أحداث webhook (UNIQUE eventId — حماية من إعادة التشغيل) |
+| `referral_earnings` | عمولات الإحالة. UNIQUE(`source_type`, `source_id`) لمنع التكرار. الحالات: pending → available → redeemed (أو reversed عند الاسترداد). الأساس = **المبلغ المدفوع فعلياً**، لا قيمة الرصيد الممنوح |
+| `incidents` · `health_snapshots` | صفحة الحالة (incidents + uptime) |
+| `organizations` · `organization_members` · `organization_invites` | فرق العمل والأعضاء والدعوات |
 
 ---
 
