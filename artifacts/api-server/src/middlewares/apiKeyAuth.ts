@@ -188,22 +188,9 @@ export async function requireApiKey(
     return;
   }
 
-  // Per-plan daily request count limit (rpd=0 => unlimited)
-  if (plan.rpd && plan.rpd > 0) {
-    const dailyCheck = await checkDailyRequestLimit(key.userId, plan.rpd);
-    res.setHeader("X-Daily-Request-Limit", String(plan.rpd));
-    res.setHeader("X-Daily-Requests-Used", String(dailyCheck.used));
-    if (!dailyCheck.allowed) {
-      res.status(429).json({
-        error: `Daily request limit reached (${dailyCheck.used} of ${dailyCheck.limit} requests today). Limit resets at 00:00 UTC.`,
-        dailyRequestsUsed: dailyCheck.used,
-        dailyRequestLimit: dailyCheck.limit,
-      });
-      return;
-    }
-  }
-
   // Per-key monthly spending limit (independent from account-level cap)
+  // Checked BEFORE the daily request counter so a rejected request does not
+  // consume a daily slot.
   if (key.monthlySpendLimitUsd != null) {
     const startOfMonth = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
     const [keySpend] = await db
@@ -216,6 +203,23 @@ export async function requireApiKey(
         error: `API key monthly spend cap reached ($${keyMonthlySpent.toFixed(4)} of $${key.monthlySpendLimitUsd.toFixed(2)}). Increase or remove the cap in Portal → API Keys.`,
         keyMonthlySpent,
         keyMonthlyLimit: key.monthlySpendLimitUsd,
+      });
+      return;
+    }
+  }
+
+  // Per-plan daily request count limit (rpd=0 => unlimited)
+  // Placed last so the counter is only incremented for requests that pass all
+  // earlier gates.
+  if (plan.rpd && plan.rpd > 0) {
+    const dailyCheck = await checkDailyRequestLimit(key.userId, plan.rpd);
+    res.setHeader("X-Daily-Request-Limit", String(plan.rpd));
+    res.setHeader("X-Daily-Requests-Used", String(dailyCheck.used));
+    if (!dailyCheck.allowed) {
+      res.status(429).json({
+        error: `Daily request limit reached (${dailyCheck.used} of ${dailyCheck.limit} requests today). Limit resets at 00:00 UTC.`,
+        dailyRequestsUsed: dailyCheck.used,
+        dailyRequestLimit: dailyCheck.limit,
       });
       return;
     }
