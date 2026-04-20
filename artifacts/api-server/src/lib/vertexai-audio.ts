@@ -1,4 +1,4 @@
-import { getActiveProvider, getAccessToken } from "./vertexai-provider";
+import { withVertexProvider, getAccessToken } from "./vertexai-provider";
 
 // ─── Voice mappings ──────────────────────────────────────────────────────────
 // OpenAI voice names → Google Cloud TTS voice names.
@@ -46,7 +46,7 @@ export async function synthesizeSpeech(opts: {
   format?: string;
   speed?: number;
 }): Promise<{ bytes: Buffer; mimeType: string; characters: number }> {
-  const provider = await getActiveProvider();
+  return withVertexProvider(async (provider) => {
   const token = await getAccessToken(provider);
 
   const tier = opts.model === "tts-1-hd" ? "hd" : "standard";
@@ -92,6 +92,7 @@ export async function synthesizeSpeech(opts: {
     mimeType,
     characters: opts.text.length,
   };
+  });
 }
 
 const MIME_TO_STT_ENCODING: Record<string, string> = {
@@ -116,7 +117,7 @@ export async function transcribeAudio(opts: {
   mimeType: string;
   language?: string;
 }): Promise<{ text: string; durationSeconds: number; language: string }> {
-  const provider = await getActiveProvider();
+  return withVertexProvider(async (provider) => {
   const token = await getAccessToken(provider);
 
   const encoding = MIME_TO_STT_ENCODING[opts.mimeType.toLowerCase()] ?? "ENCODING_UNSPECIFIED";
@@ -172,4 +173,5 @@ export async function transcribeAudio(opts: {
     durationSeconds: Math.max(durationSeconds, 1),
     language: data.results?.[0]?.languageCode ?? languageCode,
   };
+  });
 }

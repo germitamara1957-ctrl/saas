@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
+import * as zod from "zod";
 import { db, providersTable } from "@workspace/db";
 import { encryptApiKey, decryptApiKey } from "../../lib/crypto";
 import { CreateProviderBody, UpdateProviderBody } from "@workspace/api-zod";
@@ -8,13 +9,38 @@ import { requireAdmin } from "../../middlewares/adminAuth";
 
 const router: IRouter = Router();
 
+// Local extensions to the auto-generated zod schemas: priority is part of
+// our failover system but isn't yet in the OpenAPI spec. Must use the same
+// zod version as the generated schemas (zod v3, imported as `* as zod`).
+const CreateProviderBodyExt = CreateProviderBody.extend({
+  priority: zod.number().int().min(0).max(10000).optional(),
+});
+const UpdateProviderBodyExt = UpdateProviderBody.extend({
+  priority: zod.number().int().min(0).max(10000).optional(),
+});
+
 function toSafeProvider(p: typeof providersTable.$inferSelect) {
+  // Health summary surfaced to the admin UI. We never expose the encrypted
+  // credentials; only metadata that helps an admin diagnose issues.
+  const now = Date.now();
+  const circuitOpenMs = p.circuitOpenUntil ? p.circuitOpenUntil.getTime() - now : 0;
+  const status: "healthy" | "degraded" | "down" =
+    circuitOpenMs > 0 ? "down" :
+    p.consecutiveFailures > 0 ? "degraded" :
+    "healthy";
   return {
     id: p.id,
     name: p.name,
     projectId: p.projectId,
     location: p.location,
     isActive: p.isActive,
+    priority: p.priority,
+    status,
+    circuitOpenUntil: p.circuitOpenUntil,
+    consecutiveFailures: p.consecutiveFailures,
+    lastError: p.lastError,
+    lastFailureAt: p.lastFailureAt,
+    lastSuccessAt: p.lastSuccessAt,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   };
@@ -24,19 +50,19 @@ router.get("/admin/providers", requireAdmin, async (_req, res): Promise<void> =>
   const providers = await db
     .select()
     .from(providersTable)
-    .orderBy(providersTable.createdAt);
+    .orderBy(providersTable.priority, providersTable.createdAt);
 
   res.json(providers.map(toSafeProvider));
 });
 
 router.post("/admin/providers", requireAdmin, async (req, res): Promise<void> => {
-  const parsed = CreateProviderBody.safeParse(req.body);
+  const parsed = CreateProviderBodyExt.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
 
-  const { name, projectId, location, credentialsJson, isActive } = parsed.data;
+  const { name, projectId, location, credentialsJson, isActive, priority } = parsed.data;
 
   let parsedCreds: Record<string, unknown>;
   try {
@@ -60,7 +86,10 @@ router.post("/admin/providers", requireAdmin, async (req, res): Promise<void> =>
 
   const [provider] = await db
     .insert(providersTable)
-    .values({ name, projectId, location, credentialsEncrypted, isActive })
+    .values({
+      name, projectId, location, credentialsEncrypted, isActive,
+      priority: priority ?? 100,
+    })
     .returning();
 
   res.status(201).json(toSafeProvider(provider));
@@ -73,19 +102,20 @@ router.put("/admin/providers/:id", requireAdmin, async (req, res): Promise<void>
     return;
   }
 
-  const parsed = UpdateProviderBody.safeParse(req.body);
+  const parsed = UpdateProviderBodyExt.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
 
   const updates: Partial<typeof providersTable.$inferInsert> = {};
-  const { name, projectId, location, credentialsJson, isActive } = parsed.data;
+  const { name, projectId, location, credentialsJson, isActive, priority } = parsed.data;
 
   if (name !== undefined) updates.name = name;
   if (projectId !== undefined) updates.projectId = projectId;
   if (location !== undefined) updates.location = location;
   if (isActive !== undefined) updates.isActive = isActive;
+  if (priority !== undefined) updates.priority = priority;
 
   if (credentialsJson && credentialsJson.trim().length > 0) {
     let parsedCreds: Record<string, unknown>;
@@ -124,6 +154,33 @@ router.put("/admin/providers/:id", requireAdmin, async (req, res): Promise<void>
     return;
   }
 
+  res.json(toSafeProvider(provider));
+});
+
+/**
+ * Manually clear a provider's circuit breaker (admin override).
+ * Useful after an admin has fixed the underlying issue and wants the
+ * provider re-enabled immediately rather than waiting for backoff.
+ */
+router.post("/admin/providers/:id/reset", requireAdmin, async (req, res): Promise<void> => {
+  const id = parseInt(String(req.params.id), 10);
+  if (isNaN(id)) {
+    res.status(400).json({ error: "Invalid id" });
+    return;
+  }
+  const [provider] = await db
+    .update(providersTable)
+    .set({
+      consecutiveFailures: 0,
+      circuitOpenUntil: null,
+      lastError: null,
+    })
+    .where(eq(providersTable.id, id))
+    .returning();
+  if (!provider) {
+    res.status(404).json({ error: "Provider not found" });
+    return;
+  }
   res.json(toSafeProvider(provider));
 });
 
@@ -180,7 +237,6 @@ router.post("/admin/providers/:id/test", requireAdmin, async (req, res): Promise
 
     if (!vertexRes.ok) {
       const errText = await vertexRes.text();
-      // Try to extract a clean error message from JSON error response
       let errMsg = "";
       try {
         const errJson = JSON.parse(errText) as { error?: { message?: string; status?: string } };
@@ -188,6 +244,12 @@ router.post("/admin/providers/:id/test", requireAdmin, async (req, res): Promise
       } catch {
         errMsg = errText.slice(0, 300);
       }
+
+      // Record failure on the provider record so dashboards reflect reality.
+      await db.update(providersTable).set({
+        lastError: errMsg.slice(0, 500),
+        lastFailureAt: new Date(),
+      }).where(eq(providersTable.id, id));
 
       if (vertexRes.status === 403) {
         res.json({ success: false, message: `Access denied to Vertex AI. Make sure the service account has the "Vertex AI User" role on project "${projectId}". Details: ${errMsg}` });
@@ -198,6 +260,15 @@ router.post("/admin/providers/:id/test", requireAdmin, async (req, res): Promise
       }
       return;
     }
+
+    // Success → also clear the circuit breaker so the provider is immediately
+    // available for live traffic.
+    await db.update(providersTable).set({
+      consecutiveFailures: 0,
+      circuitOpenUntil: null,
+      lastError: null,
+      lastSuccessAt: new Date(),
+    }).where(eq(providersTable.id, id));
 
     res.json({ success: true, message: `Connection successful — credentials are valid and Vertex AI is accessible in project "${projectId}" (${location}).` });
   } catch (err: unknown) {

@@ -1,6 +1,6 @@
 import { type VideoJobResult, type VideoJobStatus } from "./vertexai-types";
 import { resolveVertexModelId } from "./vertexai-types";
-import { getActiveProvider, getAccessToken } from "./vertexai-provider";
+import { withVertexProvider, getAccessToken } from "./vertexai-provider";
 import { logger } from "./logger";
 
 /**
@@ -126,7 +126,7 @@ export async function generateVideoWithVeo(
   durationSeconds = 5,
   sampleCount = 1,
 ): Promise<VideoJobResult> {
-  const provider = await getActiveProvider();
+  return withVertexProvider(async (provider) => {
   const token = await getAccessToken(provider);
 
   const { projectId, location } = provider;
@@ -160,10 +160,11 @@ export async function generateVideoWithVeo(
     throw new Error("Veo submit returned no operation name");
   }
   return { operationName: data.name };
+  });
 }
 
 export async function getVideoJobStatus(operationName: string): Promise<VideoJobStatus> {
-  const provider = await getActiveProvider();
+  return withVertexProvider(async (provider) => {
   const token = await getAccessToken(provider);
 
   const { projectId, location } = provider;
@@ -261,4 +262,5 @@ export async function getVideoJobStatus(operationName: string): Promise<VideoJob
   }
 
   return { done: false };
+  });
 }

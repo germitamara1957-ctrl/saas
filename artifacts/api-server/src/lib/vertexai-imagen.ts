@@ -1,6 +1,6 @@
 import { type ImageResult } from "./vertexai-types";
 import { resolveVertexModelId } from "./vertexai-types";
-import { getActiveProvider, getAccessToken } from "./vertexai-provider";
+import { withVertexProvider, getAccessToken } from "./vertexai-provider";
 
 /**
  * Imagen inpainting via the capability model.
@@ -16,7 +16,7 @@ export async function editImageWithImagen(
   maskBase64: string,
   sampleCount = 1,
 ): Promise<ImageResult> {
-  const provider = await getActiveProvider();
+  return withVertexProvider(async (provider) => {
   const token = await getAccessToken(provider);
 
   const { projectId, location } = provider;
@@ -63,6 +63,7 @@ export async function editImageWithImagen(
       mimeType: p.mimeType ?? "image/png",
     })),
   };
+  });
 }
 
 export async function generateImageWithImagen(
@@ -70,7 +71,7 @@ export async function generateImageWithImagen(
   prompt: string,
   sampleCount = 1,
 ): Promise<ImageResult> {
-  const provider = await getActiveProvider();
+  return withVertexProvider(async (provider) => {
   const token = await getAccessToken(provider);
 
   const { projectId, location } = provider;
@@ -98,4 +99,5 @@ export async function generateImageWithImagen(
       mimeType: p.mimeType ?? "image/png",
     })),
   };
+  });
 }

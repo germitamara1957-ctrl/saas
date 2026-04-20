@@ -1,6 +1,6 @@
 import { type ChatMessage, type ChatResult, GEMINI_GLOBAL_LOCATION_MODELS } from "./vertexai-types";
 import { resolveVertexModelId } from "./vertexai-types";
-import { getActiveProvider, buildVertexAIForModel, getAccessToken, type ResolvedProvider } from "./vertexai-provider";
+import { withVertexProvider, withVertexProviderStream, buildVertexAIForModel, getAccessToken, type ResolvedProvider } from "./vertexai-provider";
 
 type GeminiRestPart =
   | { text: string }
@@ -144,7 +144,7 @@ export async function chatWithGemini(
   messages: ChatMessage[],
   options?: { temperature?: number; maxOutputTokens?: number },
 ): Promise<ChatResult> {
-  const provider = await getActiveProvider();
+  return withVertexProvider(async (provider) => {
   const vertexModel = resolveVertexModelId(model);
 
   if (GEMINI_GLOBAL_LOCATION_MODELS.has(vertexModel)) {
@@ -189,6 +189,7 @@ export async function chatWithGemini(
     inputTokens: usage?.promptTokenCount ?? 0,
     outputTokens: usage?.candidatesTokenCount ?? 0,
   };
+  });
 }
 
 export async function* streamChatWithGemini(
@@ -196,55 +197,60 @@ export async function* streamChatWithGemini(
   messages: ChatMessage[],
   options?: { temperature?: number; maxOutputTokens?: number; signal?: AbortSignal },
 ): AsyncGenerator<{ type: "delta"; text: string } | { type: "done"; inputTokens: number; outputTokens: number }> {
-  const provider = await getActiveProvider();
-  const vertexModel = resolveVertexModelId(model);
+  // Failover applies to the *setup* phase only. Once Gemini begins streaming,
+  // we don't replay partial output to a backup provider.
+  const it = await withVertexProviderStream<{ type: "delta"; text: string } | { type: "done"; inputTokens: number; outputTokens: number }>(async (provider) => {
+    const vertexModel = resolveVertexModelId(model);
 
-  if (GEMINI_GLOBAL_LOCATION_MODELS.has(vertexModel)) {
-    yield* streamChatWithGeminiGlobal(provider, vertexModel, messages, options);
-    return;
-  }
+    if (GEMINI_GLOBAL_LOCATION_MODELS.has(vertexModel)) {
+      return streamChatWithGeminiGlobal(provider, vertexModel, messages, options);
+    }
 
-  const vertexAI = buildVertexAIForModel(provider, vertexModel);
+    const vertexAI = buildVertexAIForModel(provider, vertexModel);
 
-  const generativeModel = vertexAI.getGenerativeModel({
-    model: vertexModel,
-    generationConfig: {
-      temperature: options?.temperature,
-      maxOutputTokens: options?.maxOutputTokens,
-    },
+    const generativeModel = vertexAI.getGenerativeModel({
+      model: vertexModel,
+      generationConfig: {
+        temperature: options?.temperature,
+        maxOutputTokens: options?.maxOutputTokens,
+      },
+    });
+
+    function msgToParts(msg: ChatMessage) {
+      if (typeof msg.content === "string") return [{ text: msg.content }];
+      return msg.content.map((p) =>
+        "text" in p
+          ? { text: p.text }
+          : { inlineData: { mimeType: p.mimeType, data: p.base64 } },
+      );
+    }
+
+    const history = messages.slice(0, -1).map((m) => ({
+      role: m.role,
+      parts: msgToParts(m),
+    }));
+
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage) throw new Error("No messages provided");
+
+    const chat = generativeModel.startChat({ history });
+    // sendMessageStream() throws on auth/quota errors → caught by failover wrapper
+    const streamResult = await chat.sendMessageStream(msgToParts(lastMessage));
+
+    return (async function* () {
+      for await (const chunk of streamResult.stream) {
+        if (options?.signal?.aborted) break;
+        const text = chunk.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        if (text) yield { type: "delta" as const, text };
+      }
+      const finalResponse = await streamResult.response;
+      const usage = finalResponse.usageMetadata;
+      yield {
+        type: "done" as const,
+        inputTokens: usage?.promptTokenCount ?? 0,
+        outputTokens: usage?.candidatesTokenCount ?? 0,
+      };
+    })();
   });
-
-  function msgToParts(msg: ChatMessage) {
-    if (typeof msg.content === "string") return [{ text: msg.content }];
-    return msg.content.map((p) =>
-      "text" in p
-        ? { text: p.text }
-        : { inlineData: { mimeType: p.mimeType, data: p.base64 } },
-    );
-  }
-
-  const history = messages.slice(0, -1).map((m) => ({
-    role: m.role,
-    parts: msgToParts(m),
-  }));
-
-  const lastMessage = messages[messages.length - 1];
-  if (!lastMessage) throw new Error("No messages provided");
-
-  const chat = generativeModel.startChat({ history });
-  const streamResult = await chat.sendMessageStream(msgToParts(lastMessage));
-
-  for await (const chunk of streamResult.stream) {
-    if (options?.signal?.aborted) break;
-    const text = chunk.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    if (text) yield { type: "delta", text };
-  }
-
-  const finalResponse = await streamResult.response;
-  const usage = finalResponse.usageMetadata;
-  yield {
-    type: "done",
-    inputTokens: usage?.promptTokenCount ?? 0,
-    outputTokens: usage?.candidatesTokenCount ?? 0,
-  };
+  yield* it;
 }

@@ -1,5 +1,5 @@
 import { type ChatMessage, type ChatResult, OPENAI_COMPAT_IDS, MISTRAL_RAW_PREDICT_IDS } from "./vertexai-types";
-import { getActiveProvider, getAccessToken, type ResolvedProvider } from "./vertexai-provider";
+import { withVertexProvider, withVertexProviderStream, getAccessToken, type ResolvedProvider } from "./vertexai-provider";
 
 type OpenAIContentPart =
   | { type: "text"; text: string }
@@ -75,7 +75,7 @@ export async function chatWithOpenAICompat(
   messages: ChatMessage[],
   options?: { temperature?: number; maxOutputTokens?: number },
 ): Promise<ChatResult> {
-  const provider = await getActiveProvider();
+  return withVertexProvider(async (provider) => {
   const token = await getAccessToken(provider);
   const url = buildOpenAICompatUrl(provider);
   const vertexModel = resolveOpenAICompatId(model);
@@ -112,6 +112,7 @@ export async function chatWithOpenAICompat(
     inputTokens: data.usage?.prompt_tokens ?? 0,
     outputTokens: data.usage?.completion_tokens ?? 0,
   };
+  });
 }
 
 export async function* streamChatWithOpenAICompat(
@@ -119,35 +120,44 @@ export async function* streamChatWithOpenAICompat(
   messages: ChatMessage[],
   options?: { temperature?: number; maxOutputTokens?: number; signal?: AbortSignal },
 ): AsyncGenerator<{ type: "delta"; text: string } | { type: "done"; inputTokens: number; outputTokens: number }> {
-  const provider = await getActiveProvider();
-  const token = await getAccessToken(provider);
-  const url = buildOpenAICompatUrl(provider);
-  const vertexModel = resolveOpenAICompatId(model);
+  const it = await withVertexProviderStream<{ type: "delta"; text: string } | { type: "done"; inputTokens: number; outputTokens: number }>(async (provider) => {
+    const token = await getAccessToken(provider);
+    const url = buildOpenAICompatUrl(provider);
+    const vertexModel = resolveOpenAICompatId(model);
 
-  const body: Record<string, unknown> = {
-    model: vertexModel,
-    messages: toOpenAIMessages(messages),
-    stream: true,
-    stream_options: { include_usage: true },
-  };
-  if (options?.temperature !== undefined) body.temperature = options.temperature;
-  if (options?.maxOutputTokens !== undefined) body.max_tokens = options.maxOutputTokens;
+    const body: Record<string, unknown> = {
+      model: vertexModel,
+      messages: toOpenAIMessages(messages),
+      stream: true,
+      stream_options: { include_usage: true },
+    };
+    if (options?.temperature !== undefined) body.temperature = options.temperature;
+    if (options?.maxOutputTokens !== undefined) body.max_tokens = options.maxOutputTokens;
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: options?.signal,
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: options?.signal,
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`${model} streaming error: ${response.status} ${err}`);
+    }
+
+    if (!response.body) throw new Error(`No response body from ${model} streaming`);
+
+    return streamOpenAICompatBody(response, options);
   });
+  yield* it;
+}
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`${model} streaming error: ${response.status} ${err}`);
-  }
-
-  if (!response.body) throw new Error(`No response body from ${model} streaming`);
-
-  const reader = response.body.getReader();
+async function* streamOpenAICompatBody(
+  response: Response,
+  options?: { signal?: AbortSignal },
+): AsyncGenerator<{ type: "delta"; text: string } | { type: "done"; inputTokens: number; outputTokens: number }> {
+  const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let inputTokens = 0;
@@ -226,7 +236,7 @@ export async function chatWithMistralRawPredict(
   messages: ChatMessage[],
   options?: { temperature?: number; maxOutputTokens?: number },
 ): Promise<ChatResult> {
-  const provider = await getActiveProvider();
+  return withVertexProvider(async (provider) => {
   const token = await getAccessToken(provider);
   const mistralModelId = resolveMistralModelId(model);
   const url = buildMistralUrl(provider, mistralModelId, false);
@@ -260,6 +270,7 @@ export async function chatWithMistralRawPredict(
     inputTokens: data.usage?.prompt_tokens ?? 0,
     outputTokens: data.usage?.completion_tokens ?? 0,
   };
+  });
 }
 
 export async function* streamChatWithMistralRawPredict(
@@ -267,34 +278,43 @@ export async function* streamChatWithMistralRawPredict(
   messages: ChatMessage[],
   options?: { temperature?: number; maxOutputTokens?: number; signal?: AbortSignal },
 ): AsyncGenerator<{ type: "delta"; text: string } | { type: "done"; inputTokens: number; outputTokens: number }> {
-  const provider = await getActiveProvider();
-  const token = await getAccessToken(provider);
-  const mistralModelId = resolveMistralModelId(model);
-  const url = buildMistralUrl(provider, mistralModelId, true);
+  const it = await withVertexProviderStream<{ type: "delta"; text: string } | { type: "done"; inputTokens: number; outputTokens: number }>(async (provider) => {
+    const token = await getAccessToken(provider);
+    const mistralModelId = resolveMistralModelId(model);
+    const url = buildMistralUrl(provider, mistralModelId, true);
 
-  const body: Record<string, unknown> = {
-    model: mistralModelId,
-    messages: toOpenAIMessages(messages),
-    stream: true,
-  };
-  if (options?.temperature !== undefined) body.temperature = options.temperature;
-  if (options?.maxOutputTokens !== undefined) body.max_tokens = options.maxOutputTokens;
+    const body: Record<string, unknown> = {
+      model: mistralModelId,
+      messages: toOpenAIMessages(messages),
+      stream: true,
+    };
+    if (options?.temperature !== undefined) body.temperature = options.temperature;
+    if (options?.maxOutputTokens !== undefined) body.max_tokens = options.maxOutputTokens;
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: options?.signal,
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: options?.signal,
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`${model} streaming error: ${response.status} ${err}`);
+    }
+
+    if (!response.body) throw new Error(`No response body from ${model} streaming`);
+
+    return streamMistralBody(response, options);
   });
+  yield* it;
+}
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(`${model} streaming error: ${response.status} ${err}`);
-  }
-
-  if (!response.body) throw new Error(`No response body from ${model} streaming`);
-
-  const reader = response.body.getReader();
+async function* streamMistralBody(
+  response: Response,
+  options?: { signal?: AbortSignal },
+): AsyncGenerator<{ type: "delta"; text: string } | { type: "done"; inputTokens: number; outputTokens: number }> {
+  const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let inputTokens = 0;
