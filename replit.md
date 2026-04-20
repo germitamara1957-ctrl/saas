@@ -299,6 +299,15 @@ Stripe was previously dismissed; not in use. Do **not** hardcode any payment cre
 
 ## Recent Changes (Apr 2026)
 
+### Session 37 — Docs: Function Calling and Vision sections added to portal
+
+Added two missing sections to `/portal/docs` so developers can discover the features that already exist in the gateway. Docs were technically correct before, but two of the most-requested capabilities were undocumented.
+
+1. **Function Calling / Tools** card: parameters table (`tools`, `tool_choice`, `parallel_tool_calls`, `role:"tool"` messages), full cURL/Python/JavaScript roundtrip examples (first call → tool result → final answer), OpenAI-shaped sample response, and a callout to leave n8n's "Use Responses API" toggle OFF.
+2. **Vision & Multimodal** card: `image_url` content-part format with both HTTPS URLs and Data URLs, accepted MIME types (images/PDF/text/audio/video), 30 MB per-file limit, three language examples that read a local file and base64-encode it.
+
+Both cards are fully bilingual (Arabic + English) and follow the existing `SectionTitle` + `Card` + tabbed code blocks pattern. Inserted between Text Generation and Image Generation in `Docs.tsx`.
+
 ### Session 36 — Function Calling / Tools support (n8n, Make, LangChain compatible)
 
 Added full OpenAI-compatible **tool calling** to `/v1/chat/completions` so the gateway works with agent platforms (n8n AI Agent, Make.com, LangChain, OpenAI SDK with `tools=`). Previously the schema silently dropped `tools` and `tool_choice`, so agents always got plain text back even when they expected structured tool calls — breaking every Agent workflow.
