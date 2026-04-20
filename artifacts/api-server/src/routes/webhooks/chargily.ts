@@ -267,6 +267,8 @@ router.post(
           });
 
           logger.info({ intentId: credited.id, userId: credited.userId, planId: targetPlanId }, "Chargily plan upgrade activated");
+          // Plan-upgrade earning: basis is the plan's USD list price.
+          referralBasis = { sourceType: "plan", basisAmountUsd: Number(plan.priceUsd) };
         }
       } else {
         // Default: credit the user's top-up balance. Using SQL arithmetic avoids
@@ -319,9 +321,9 @@ router.post(
         const { recordReferralEarning } = await import("../../lib/referrals");
         await recordReferralEarning({
           referredUserId: credited.userId,
-          sourceType: "topup",
+          sourceType: referralBasis.sourceType,
           sourceId: credited.id,
-          basisAmountUsd: Number(credited.amountUsd),
+          basisAmountUsd: referralBasis.basisAmountUsd,
         });
       } catch (err) {
         logger.warn({ err, intentId: credited.id }, "Referral earning recording failed (non-fatal)");
@@ -363,7 +365,14 @@ router.post(
 
       try {
         const { reverseReferralEarning } = await import("../../lib/referrals");
-        const result = await reverseReferralEarning("topup", intent.id);
+        // Earning was recorded as either "topup" or "plan" depending on the
+        // intent's purpose; only one will exist for this sourceId. Try both —
+        // the non-matching call is a no-op.
+        const [r1, r2] = await Promise.all([
+          reverseReferralEarning("topup", intent.id),
+          reverseReferralEarning("plan", intent.id),
+        ]);
+        const result = r1.reversed ? r1 : r2;
         if (result.reversed) {
           await db.insert(auditLogsTable).values({
             action: "referral.reversed",
