@@ -50,9 +50,14 @@ router.get("/portal/referrals", async (req, res): Promise<void> => {
       return;
     }
 
-    const [stats, recent] = await Promise.all([
+    const [stats, recent, userRow] = await Promise.all([
       getReferrerStats(userId),
       getRecentEarnings(userId, 20),
+      db
+        .select({ emailVerified: usersTable.emailVerified })
+        .from(usersTable)
+        .where(eq(usersTable.id, userId))
+        .limit(1),
     ]);
 
     const baseUrl = await getAppBaseUrl(req);
@@ -65,6 +70,7 @@ router.get("/portal/referrals", async (req, res): Promise<void> => {
       rate: config.rate,
       holdDays: config.holdDays,
       minRedeemUsd: config.minRedeemUsd,
+      emailVerified: Boolean(userRow[0]?.emailVerified),
       stats,
       recent,
     });
@@ -81,6 +87,20 @@ router.get("/portal/referrals", async (req, res): Promise<void> => {
 router.post("/portal/referrals/redeem", async (req, res): Promise<void> => {
   const userId = Number(req.authUser!.sub);
   try {
+    const [userRow] = await db
+      .select({ emailVerified: usersTable.emailVerified })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    if (!userRow?.emailVerified) {
+      res.status(403).json({
+        error: "EMAIL_NOT_VERIFIED",
+        message: "Verify your email before redeeming referral earnings.",
+        messageAr: "يجب توثيق بريدك الإلكتروني قبل سحب رصيد الإحالة.",
+      });
+      return;
+    }
+
     const result = await redeemAvailableEarnings(userId);
     if (!result.ok) {
       res.status(400).json({ error: result.reason ?? "Redeem failed" });

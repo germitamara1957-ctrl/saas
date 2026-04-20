@@ -27,6 +27,7 @@ interface ReferralData {
   rate: number;
   holdDays: number;
   minRedeemUsd: number;
+  emailVerified?: boolean;
   stats: {
     referredCount: number;
     pendingUsd: number;
@@ -213,7 +214,11 @@ export default function PortalReferrals() {
             <Button
               size="sm"
               className="w-full mt-2"
-              disabled={redeeming || data.stats.availableUsd < data.minRedeemUsd}
+              disabled={
+                redeeming ||
+                data.stats.availableUsd < data.minRedeemUsd ||
+                data.emailVerified === false
+              }
               onClick={handleRedeem}
               data-testid="button-redeem"
             >
@@ -221,7 +226,14 @@ export default function PortalReferrals() {
                 ? <><Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> {isAr ? "جارٍ..." : "Processing..."}</>
                 : (isAr ? "تحويل للرصيد" : "Redeem")}
             </Button>
-            {data.stats.availableUsd > 0 && data.stats.availableUsd < data.minRedeemUsd && (
+            {data.emailVerified === false && (
+              <div className="text-xs text-amber-600 dark:text-amber-500 mt-1" data-testid="text-verify-required">
+                {isAr
+                  ? "يجب توثيق بريدك الإلكتروني قبل السحب."
+                  : "Verify your email to redeem."}
+              </div>
+            )}
+            {data.emailVerified !== false && data.stats.availableUsd > 0 && data.stats.availableUsd < data.minRedeemUsd && (
               <div className="text-xs text-muted-foreground mt-1">
                 {isAr
                   ? `الحد الأدنى ${fmtUsd(data.minRedeemUsd)}`
