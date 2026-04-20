@@ -590,6 +590,216 @@ console.log(data.costUsd);      // cost charged`;
   "costUsd": 0.0000148
 }`;
 
+  // ── Function Calling / Tools ────────────────────────────────────────────────
+  const toolsCurl = `curl -X POST "${base}/api/v1/chat/completions" \\
+  -H "Authorization: Bearer ${apiKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "gemini-2.5-flash",
+    "messages": [
+      {"role": "user", "content": "What is the weather in Paris?"}
+    ],
+    "tools": [{
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Get current weather for a city",
+        "parameters": {
+          "type": "object",
+          "properties": { "city": {"type": "string"} },
+          "required": ["city"]
+        }
+      }
+    }],
+    "tool_choice": "auto"
+  }'`;
+
+  const toolsPython = `from openai import OpenAI
+
+client = OpenAI(
+    base_url="${base}/api/v1",
+    api_key="${apiKey}"
+)
+
+tools = [{
+    "type": "function",
+    "function": {
+        "name": "get_weather",
+        "description": "Get current weather for a city",
+        "parameters": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"],
+        },
+    },
+}]
+
+# 1) First call — model decides to call the tool
+resp = client.chat.completions.create(
+    model="gemini-2.5-flash",
+    messages=[{"role": "user", "content": "What is the weather in Paris?"}],
+    tools=tools,
+    tool_choice="auto",
+)
+
+msg = resp.choices[0].message
+print(msg.tool_calls)            # [{ id, function: { name, arguments } }]
+
+# 2) Run your tool and send the result back
+tool_result = '{"temp_c": 22, "condition": "Sunny"}'
+
+final = client.chat.completions.create(
+    model="gemini-2.5-flash",
+    messages=[
+        {"role": "user", "content": "What is the weather in Paris?"},
+        msg,                                          # assistant turn with tool_calls
+        {"role": "tool",
+         "tool_call_id": msg.tool_calls[0].id,
+         "name": "get_weather",
+         "content": tool_result},
+    ],
+    tools=tools,
+)
+print(final.choices[0].message.content)`;
+
+  const toolsJs = `import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "${base}/api/v1",
+  apiKey: "${apiKey}",
+});
+
+const tools = [{
+  type: "function",
+  function: {
+    name: "get_weather",
+    description: "Get current weather for a city",
+    parameters: {
+      type: "object",
+      properties: { city: { type: "string" } },
+      required: ["city"],
+    },
+  },
+}];
+
+// 1) First call — model decides to call the tool
+const r1 = await client.chat.completions.create({
+  model: "gemini-2.5-flash",
+  messages: [{ role: "user", content: "What is the weather in Paris?" }],
+  tools,
+  tool_choice: "auto",
+});
+
+const msg = r1.choices[0].message;
+console.log(msg.tool_calls);
+
+// 2) Run your tool and feed the result back
+const toolResult = JSON.stringify({ temp_c: 22, condition: "Sunny" });
+
+const r2 = await client.chat.completions.create({
+  model: "gemini-2.5-flash",
+  messages: [
+    { role: "user", content: "What is the weather in Paris?" },
+    msg,
+    {
+      role: "tool",
+      tool_call_id: msg.tool_calls[0].id,
+      name: "get_weather",
+      content: toolResult,
+    },
+  ],
+  tools,
+});
+console.log(r2.choices[0].message.content);`;
+
+  const toolsResponse = `{
+  "id": "chatcmpl-...",
+  "object": "chat.completion",
+  "model": "gemini-2.5-flash",
+  "choices": [{
+    "index": 0,
+    "message": {
+      "role": "assistant",
+      "content": null,
+      "tool_calls": [{
+        "id": "call_abc123",
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "arguments": "{\\"city\\":\\"Paris\\"}"
+        }
+      }]
+    },
+    "finish_reason": "tool_calls"
+  }],
+  "usage": { "prompt_tokens": 219, "completion_tokens": 5, "total_tokens": 224 }
+}`;
+
+  // ── Vision / Multimodal (image + PDF + audio in chat) ───────────────────────
+  const visionCurl = `# Send an image as a Data URL inside a chat message
+curl -X POST "${base}/api/v1/chat/completions" \\
+  -H "Authorization: Bearer ${apiKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "gemini-2.5-flash",
+    "messages": [{
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "What is in this image?"},
+        {"type": "image_url",
+         "image_url": {"url": "https://example.com/photo.jpg"}}
+      ]
+    }]
+  }'`;
+
+  const visionPython = `import base64
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="${base}/api/v1",
+    api_key="${apiKey}",
+)
+
+# Works for images, PDF, plain text, audio, video — any file under 30 MB.
+with open("invoice.pdf", "rb") as f:
+    b64 = base64.b64encode(f.read()).decode()
+
+resp = client.chat.completions.create(
+    model="gemini-2.5-flash",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Summarise this invoice"},
+            {"type": "image_url",
+             "image_url": {"url": f"data:application/pdf;base64,{b64}"}},
+        ],
+    }],
+)
+print(resp.choices[0].message.content)`;
+
+  const visionJs = `import OpenAI from "openai";
+import { readFileSync } from "node:fs";
+
+const client = new OpenAI({
+  baseURL: "${base}/api/v1",
+  apiKey: "${apiKey}",
+});
+
+const b64 = readFileSync("photo.jpg").toString("base64");
+
+const resp = await client.chat.completions.create({
+  model: "gemini-2.5-flash",
+  messages: [{
+    role: "user",
+    content: [
+      { type: "text", text: "Describe this image" },
+      { type: "image_url",
+        image_url: { url: \`data:image/jpeg;base64,\${b64}\` } },
+    ],
+  }],
+});
+console.log(resp.choices[0].message.content);`;
+
   // ── Generate (Image) ────────────────────────────────────────────────────────
   const genCurl = `curl -X POST "${base}/api/v1/generate" \\
   -H "Authorization: Bearer ${apiKey}" \\
@@ -1029,6 +1239,141 @@ console.log("MP4 size (bytes):", mp4.size);`;
                 <TabsContent value="curl" className="m-0"><CodeBlock code={chatCurl} /></TabsContent>
                 <TabsContent value="python" className="m-0"><CodeBlock code={chatPython} /></TabsContent>
                 <TabsContent value="javascript" className="m-0"><CodeBlock code={chatJs} /></TabsContent>
+              </Tabs>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Function Calling / Tools */}
+      <div className="space-y-3">
+        <SectionTitle>{isAr ? "استدعاء الأدوات (Function Calling)" : "Function Calling / Tools"}</SectionTitle>
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <Badge variant="outline" className="bg-primary/10 text-primary font-mono">POST</Badge>
+              <code className="text-base font-mono font-semibold">/api/v1/chat/completions</code>
+              <Badge variant="secondary" className="text-[10px]">{isAr ? "متوافق مع OpenAI" : "OpenAI-compatible"}</Badge>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">
+              {isAr
+                ? "اسمح للنموذج باستدعاء أدوات/دوال خارجية (Google Sheets، HTTP، قواعد البيانات...). متوافق مع n8n AI Agent، Make.com، LangChain، وOpenAI SDK. تعمل مع كل نماذج Gemini والشركاء (Claude, Llama, Mistral, DeepSeek, Grok)."
+                : "Let the model call external tools/functions (Google Sheets, HTTP, databases, …). Works with n8n AI Agent, Make.com, LangChain, and the OpenAI SDK. Supported on every Gemini and partner model (Claude, Llama, Mistral, DeepSeek, Grok)."}
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1">{isAr ? "معاملات الإدخال" : "Request Parameters"}</p>
+                <table className="w-full text-xs">
+                  <tbody className="divide-y divide-border/30">
+                    {[
+                      ["tools", "array", isAr ? "اختياري" : "Optional", isAr ? "قائمة الأدوات بصيغة OpenAI: {type:'function', function:{name, description, parameters}}" : "Array of OpenAI-style tool definitions"],
+                      ["tool_choice", "string|object", isAr ? "اختياري" : "Optional", isAr ? "auto (افتراضي) | none | required | {type:'function', function:{name}}" : "auto (default) | none | required | { type:'function', function:{ name } }"],
+                      ["parallel_tool_calls", "boolean", isAr ? "اختياري" : "Optional", isAr ? "السماح بأكثر من استدعاء أداة في نفس الرد" : "Allow multiple tool calls per response"],
+                      ["messages[role=tool]", "object", isAr ? "للرد" : "For result", isAr ? "أرسل نتيجة الأداة: {role:'tool', tool_call_id, name, content}" : "Send tool result: {role:'tool', tool_call_id, name, content}"],
+                    ].map(([name, type, req, desc]) => (
+                      <tr key={name}>
+                        <td className="py-1.5 pr-2 font-mono text-primary">{name}</td>
+                        <td className="py-1.5 pr-2 text-muted-foreground">{type}</td>
+                        <td className="py-1.5 pr-2 text-muted-foreground">{req}</td>
+                        <td className="py-1.5 text-muted-foreground">{desc}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1">{isAr ? "مثال الاستجابة" : "Response (when model calls a tool)"}</p>
+                <CodeBlock code={toolsResponse} />
+              </div>
+            </div>
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-400">
+              {isAr
+                ? "ملاحظة: عند استخدام n8n OpenAI Chat Model، اترك خيار \"Use Responses API\" مغلقاً. الأدوات تعمل عبر Chat Completions القياسية."
+                : "Tip: when using n8n's OpenAI Chat Model node, leave \"Use Responses API\" OFF. Tools work over standard Chat Completions."}
+            </div>
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2">{isAr ? "أمثلة كاملة (دورة استدعاء + رد الأداة)" : "Full examples (tool call + tool result roundtrip)"}</p>
+              <Tabs defaultValue="curl">
+                <TabsList className="mb-3">
+                  <TabsTrigger value="curl">cURL</TabsTrigger>
+                  <TabsTrigger value="python">Python</TabsTrigger>
+                  <TabsTrigger value="javascript">JavaScript</TabsTrigger>
+                </TabsList>
+                <TabsContent value="curl" className="m-0"><CodeBlock code={toolsCurl} /></TabsContent>
+                <TabsContent value="python" className="m-0"><CodeBlock code={toolsPython} /></TabsContent>
+                <TabsContent value="javascript" className="m-0"><CodeBlock code={toolsJs} /></TabsContent>
+              </Tabs>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Vision / Multimodal */}
+      <div className="space-y-3">
+        <SectionTitle>{isAr ? "الرؤية والوسائط المتعددة (Vision)" : "Vision & Multimodal Inputs"}</SectionTitle>
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <Badge variant="outline" className="bg-primary/10 text-primary font-mono">POST</Badge>
+              <code className="text-base font-mono font-semibold">/api/v1/chat/completions</code>
+              <Badge variant="secondary" className="text-[10px]">image · pdf · audio · video</Badge>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">
+              {isAr
+                ? "أرفق صوراً أو ملفات PDF أو صوتاً أو فيديو داخل رسالة المستخدم. النماذج المدعومة: كل نماذج Gemini (يفضّل gemini-2.5-flash أو gemini-2.5-pro). الحد الأقصى 30MB لكل ملف."
+                : "Attach images, PDFs, audio, or video directly inside a user message. Supported models: all Gemini variants (gemini-2.5-flash and gemini-2.5-pro recommended). Max 30 MB per file."}
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="text-sm">
+              <p className="text-xs font-medium text-muted-foreground mb-1">{isAr ? "صيغة الرسالة (متوافقة مع OpenAI)" : "Message format (OpenAI-compatible)"}</p>
+              <CodeBlock code={`{
+  "role": "user",
+  "content": [
+    { "type": "text",
+      "text": "${isAr ? "ماذا يوجد في هذه الصورة؟" : "What is in this image?"}" },
+    { "type": "image_url",
+      "image_url": { "url": "https://example.com/photo.jpg" } }
+    // OR a Data URL for any local file:
+    // { "type": "image_url",
+    //   "image_url": { "url": "data:application/pdf;base64,JVBERi0..." } }
+  ]
+}`} />
+            </div>
+            <div className="grid grid-cols-2 gap-4 text-xs">
+              <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-1">
+                <p className="font-semibold text-emerald-700 dark:text-emerald-400">{isAr ? "الأنواع المدعومة" : "Accepted MIME types"}</p>
+                <p className="text-muted-foreground leading-relaxed">
+                  image/jpeg · image/png · image/gif · image/webp · image/heic ·
+                  application/pdf · text/plain · text/markdown · text/csv ·
+                  application/json · text/html · text/xml ·
+                  audio/mpeg · audio/wav · audio/ogg ·
+                  video/mp4 · video/webm
+                </p>
+              </div>
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 space-y-1">
+                <p className="font-semibold text-amber-700 dark:text-amber-400">{isAr ? "حدود وقيود" : "Limits & caveats"}</p>
+                <ul className="list-disc list-inside space-y-0.5 text-muted-foreground">
+                  <li>{isAr ? "30 MB كحد أقصى لكل ملف" : "30 MB max per file"}</li>
+                  <li>{isAr ? "يفضّل Gemini للملفات غير الصورية (PDF/audio/video)" : "Prefer Gemini for non-image files (PDF/audio/video)"}</li>
+                  <li>{isAr ? "روابط HTTPS و Data URLs مدعومة" : "Both HTTPS URLs and Data URLs work"}</li>
+                  <li>{isAr ? "النماذج النصية البحتة قد تتجاهل المرفقات" : "Text-only models may ignore attachments"}</li>
+                </ul>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2">{isAr ? "أمثلة" : "Examples"}</p>
+              <Tabs defaultValue="curl">
+                <TabsList className="mb-3">
+                  <TabsTrigger value="curl">cURL</TabsTrigger>
+                  <TabsTrigger value="python">Python</TabsTrigger>
+                  <TabsTrigger value="javascript">JavaScript</TabsTrigger>
+                </TabsList>
+                <TabsContent value="curl" className="m-0"><CodeBlock code={visionCurl} /></TabsContent>
+                <TabsContent value="python" className="m-0"><CodeBlock code={visionPython} /></TabsContent>
+                <TabsContent value="javascript" className="m-0"><CodeBlock code={visionJs} /></TabsContent>
               </Tabs>
             </div>
           </CardContent>
