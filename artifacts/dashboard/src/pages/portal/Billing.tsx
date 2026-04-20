@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Wallet, ExternalLink, AlertCircle, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { Loader2, Wallet, ExternalLink, AlertCircle, CheckCircle2, XCircle, Clock, MessageCircle, PauseCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { authFetch } from "@/lib/authFetch";
 
@@ -157,54 +157,91 @@ export default function PortalBilling() {
         )}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{isAr ? "إنشاء عملية دفع" : "New Top-up"}</CardTitle>
-          <CardDescription>
-            {isAr ? "سعر الصرف الحالي:" : "Current rate:"} 1 USD = {config.dzdToUsdRate} DZD
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">{isAr ? "المبلغ بالدينار الجزائري (DZD)" : "Amount (DZD)"}</label>
-            <Input
-              type="number"
-              min={config.minTopupDzd}
-              max={config.maxTopupDzd}
-              step={100}
-              value={amountStr}
-              onChange={(e) => setAmountStr(e.target.value)}
-              dir="ltr"
-              className="text-lg font-mono"
-            />
-            <div className="text-xs text-muted-foreground">
-              {isAr ? "الحد الأدنى" : "Min"}: {config.minTopupDzd} DZD · {isAr ? "الحد الأقصى" : "Max"}: {config.maxTopupDzd.toLocaleString()} DZD
+      {config.enabled ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{isAr ? "إنشاء عملية دفع" : "New Top-up"}</CardTitle>
+            <CardDescription>
+              {isAr ? "سعر الصرف الحالي:" : "Current rate:"} 1 USD = {config.dzdToUsdRate} DZD
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{isAr ? "المبلغ بالدينار الجزائري (DZD)" : "Amount (DZD)"}</label>
+              <Input
+                type="number"
+                min={config.minTopupDzd}
+                max={config.maxTopupDzd}
+                step={100}
+                value={amountStr}
+                onChange={(e) => setAmountStr(e.target.value)}
+                dir="ltr"
+                className="text-lg font-mono"
+              />
+              <div className="text-xs text-muted-foreground">
+                {isAr ? "الحد الأدنى" : "Min"}: {config.minTopupDzd} DZD · {isAr ? "الحد الأقصى" : "Max"}: {config.maxTopupDzd.toLocaleString()} DZD
+              </div>
             </div>
-          </div>
 
-          <div className="rounded-md bg-muted/50 p-4 border">
-            <div className="text-sm text-muted-foreground">{isAr ? "ستحصل على" : "You will receive"}</div>
-            <div className="text-2xl font-bold tabular-nums" dir="ltr">
-              ${previewUsd.toFixed(4)} <span className="text-base text-muted-foreground font-normal">USD</span>
+            <div className="rounded-md bg-muted/50 p-4 border">
+              <div className="text-sm text-muted-foreground">{isAr ? "ستحصل على" : "You will receive"}</div>
+              <div className="text-2xl font-bold tabular-nums" dir="ltr">
+                ${previewUsd.toFixed(4)} <span className="text-base text-muted-foreground font-normal">USD</span>
+              </div>
             </div>
-          </div>
 
-          {validationError && (
-            <div className="text-sm text-destructive flex items-center gap-1">
-              <AlertCircle className="h-4 w-4" /> {validationError}
-            </div>
-          )}
+            {validationError && (
+              <div className="text-sm text-destructive flex items-center gap-1">
+                <AlertCircle className="h-4 w-4" /> {validationError}
+              </div>
+            )}
 
-          <Button
-            className="w-full"
-            disabled={submitting || Boolean(validationError)}
-            onClick={handleTopup}
-          >
-            {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ExternalLink className="h-4 w-4 mr-2" />}
-            {isAr ? "ادفع عبر Chargily" : "Pay with Chargily"}
-          </Button>
-        </CardContent>
-      </Card>
+            <Button
+              className="w-full"
+              disabled={submitting || Boolean(validationError)}
+              onClick={handleTopup}
+              data-testid="button-pay-chargily"
+            >
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ExternalLink className="h-4 w-4 mr-2" />}
+              {isAr ? "ادفع عبر Chargily" : "Pay with Chargily"}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border-amber-500/40 bg-amber-50/50 dark:bg-amber-950/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+              <PauseCircle className="h-5 w-5" />
+              {isAr ? "خدمة الشحن متوقفة مؤقتاً" : "Top-ups are temporarily paused"}
+            </CardTitle>
+            <CardDescription>
+              {isAr
+                ? "الدفع الإلكتروني عبر Chargily Pay متوقف حالياً من قِبَل الإدارة. يمكنك التواصل معنا مباشرة عبر واتساب لإتمام عملية الشحن يدوياً."
+                : "Online payment via Chargily Pay is currently disabled by the administrator. Please contact us directly on WhatsApp to top up your account manually."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              asChild
+              className="w-full bg-[#25D366] hover:bg-[#1ebe5d] text-white border-0"
+              data-testid="button-contact-whatsapp"
+            >
+              <a
+                href={`https://wa.me/213796586479?text=${encodeURIComponent(
+                  isAr
+                    ? "مرحباً، أرغب في شحن رصيد حسابي على AI Gateway."
+                    : "Hello, I'd like to top up my AI Gateway account."
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <MessageCircle className="h-4 w-4 mr-2" />
+                {isAr ? "تواصل عبر واتساب" : "Contact via WhatsApp"}
+              </a>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
