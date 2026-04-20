@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
+import { z } from "zod";
 import { db, usageLogsTable } from "@workspace/db";
-import { ChatCompletionBody } from "@workspace/api-zod";
 import { requireApiKey } from "../../middlewares/apiKeyAuth";
 import { checkRateLimit } from "../../lib/rateLimit";
 import {
@@ -26,6 +26,32 @@ import { stripThinkTags, ThinkTagFilter, deductAndLog, isModelInPlan } from "../
 import { dispatchWebhooks } from "../../lib/webhookDispatcher";
 
 const router: IRouter = Router();
+
+// Local lenient body schema. The generated api-zod ChatCompletionBody only
+// permits string content, but we support OpenAI-style multimodal arrays with
+// text + binary parts (image/audio/video/document). We accept either form here
+// and let the provider layer do the actual conversion.
+const ContentPartSchema = z.union([
+  z.object({ type: z.literal("text"), text: z.string() }),
+  z.object({
+    type: z.string(), // "image", "audio", "video", "file", "document", ...
+    mimeType: z.string(),
+    base64: z.string(),
+  }),
+]);
+
+const ChatBodySchema = z.object({
+  model: z.string(),
+  messages: z.array(
+    z.object({
+      role: z.string(),
+      content: z.union([z.string(), z.array(ContentPartSchema).min(1)]),
+    }),
+  ).min(1),
+  stream: z.boolean().default(false),
+  temperature: z.number().optional(),
+  maxOutputTokens: z.number().optional(),
+});
 
 /**
  * Returns an error response in the correct format:
@@ -68,7 +94,7 @@ async function handleChat(
     maxOutputTokens: (body.maxOutputTokens ?? body.max_tokens) as number | undefined,
   };
 
-  const parsed = ChatCompletionBody.safeParse(normalizedBody);
+  const parsed = ChatBodySchema.safeParse(normalizedBody);
   if (!parsed.success) {
     sendError(res, 400, parsed.error.message, openaiCompat);
     return;
@@ -187,17 +213,18 @@ async function handleChat(
   const provider = detectModelProvider(model);
 
   // ── Multimodal model validation ───────────────────────────────────────────
-  // Images in message content are only supported for Gemini models.
-  // Reject early with a clear error instead of silently stripping images.
+  // Binary parts (images, audio, video, documents) in message content are
+  // only supported for Gemini models on this gateway. Reject early with a
+  // clear error instead of silently stripping the attachments.
   if (provider === "openai-compat" || provider === "mistral-raw-predict") {
-    const hasImages = guardedMessages.some((msg) =>
+    const hasBinaryParts = guardedMessages.some((msg) =>
       Array.isArray(msg.content) &&
-      msg.content.some((part) => part.type === "image"),
+      msg.content.some((part) => part.type !== "text"),
     );
-    if (hasImages) {
+    if (hasBinaryParts) {
       sendError(
         res, 400,
-        `Model "${model}" does not support image inputs. Image content is only supported for Gemini models (gemini-*).`,
+        `Model "${model}" does not support file/image/audio/document attachments. Multimodal inputs are only supported for Gemini models (gemini-*).`,
         openaiCompat,
         { code: "model_not_supported" },
       );

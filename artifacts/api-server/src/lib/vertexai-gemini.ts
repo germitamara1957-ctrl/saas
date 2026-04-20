@@ -17,7 +17,7 @@ function toGeminiContents(messages: ChatMessage[]): GeminiRestContent[] {
       return { role: m.role, parts: [{ text: m.content }] };
     }
     const parts: GeminiRestPart[] = m.content.map((part) => {
-      if (part.type === "text") return { text: part.text };
+      if ("text" in part) return { text: part.text };
       return { inlineData: { mimeType: part.mimeType, data: part.base64 } };
     });
     return { role: m.role, parts };
@@ -164,7 +164,7 @@ export async function chatWithGemini(
   function msgToParts(msg: ChatMessage) {
     if (typeof msg.content === "string") return [{ text: msg.content }];
     return msg.content.map((p) =>
-      p.type === "text"
+      "text" in p
         ? { text: p.text }
         : { inlineData: { mimeType: p.mimeType, data: p.base64 } },
     );
@@ -217,7 +217,7 @@ export async function* streamChatWithGemini(
   function msgToParts(msg: ChatMessage) {
     if (typeof msg.content === "string") return [{ text: msg.content }];
     return msg.content.map((p) =>
-      p.type === "text"
+      "text" in p
         ? { text: p.text }
         : { inlineData: { mimeType: p.mimeType, data: p.base64 } },
     );

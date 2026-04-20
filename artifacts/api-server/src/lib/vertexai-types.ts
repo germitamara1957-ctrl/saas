@@ -3,13 +3,18 @@ export interface TextPart {
   text: string;
 }
 
-export interface ImagePart {
-  type: "image";
+export interface BinaryPart {
+  // "image" | "audio" | "video" | "file" | "document" | etc.
+  // Anything non-"text" is forwarded to Gemini as inlineData.
+  type: string;
   mimeType: string;
   base64: string;
 }
 
-export type ContentPart = TextPart | ImagePart;
+// Kept as alias for backwards compatibility with older imports.
+export type ImagePart = BinaryPart;
+
+export type ContentPart = TextPart | BinaryPart;
 
 export interface ChatMessage {
   role: "user" | "model";
