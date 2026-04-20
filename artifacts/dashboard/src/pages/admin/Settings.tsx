@@ -467,6 +467,7 @@ function EmailPolicyCard() {
   const [allowed, setAllowed] = useState("");
   const [blocked, setBlocked] = useState("");
   const [blockDisposable, setBlockDisposable] = useState(true);
+  const [officialOnly, setOfficialOnly] = useState(true);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/admin/settings`, { credentials: "include" })
@@ -475,6 +476,7 @@ function EmailPolicyCard() {
         setAllowed(typeof d.signup_allowed_email_domains === "string" ? d.signup_allowed_email_domains : "");
         setBlocked(typeof d.signup_blocked_email_domains === "string" ? d.signup_blocked_email_domains : "");
         setBlockDisposable(d.signup_block_disposable == null ? true : d.signup_block_disposable !== "false");
+        setOfficialOnly(d.signup_official_providers_only == null ? true : d.signup_official_providers_only !== "false");
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -487,6 +489,7 @@ function EmailPolicyCard() {
         signup_allowed_email_domains: allowed.trim(),
         signup_blocked_email_domains: blocked.trim(),
         signup_block_disposable: blockDisposable ? "true" : "false",
+        signup_official_providers_only: officialOnly ? "true" : "false",
       });
       toast({ title: "Saved", description: "Email signup policy updated." });
     } catch (err) {
@@ -549,6 +552,25 @@ function EmailPolicyCard() {
               <p className="text-xs text-muted-foreground">
                 Always rejected, regardless of allowlist.
               </p>
+            </div>
+
+            <div className="flex items-center justify-between rounded-md border p-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="official-only" className="cursor-pointer">
+                  Official providers only (recommended)
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Restrict signup to mainstream providers: Gmail, Outlook, Hotmail, Live, Yahoo,
+                  iCloud, Proton, AOL, GMX, Zoho, Yandex. Custom allowlist domains above are
+                  added on top.
+                </p>
+              </div>
+              <Switch
+                id="official-only"
+                checked={officialOnly}
+                onCheckedChange={setOfficialOnly}
+                data-testid="switch-official-only"
+              />
             </div>
 
             <div className="flex items-center justify-between rounded-md border p-3">

@@ -20,6 +20,7 @@ const ALLOWED_KEYS = new Set([
   "signup_allowed_email_domains",
   "signup_blocked_email_domains",
   "signup_block_disposable",
+  "signup_official_providers_only",
 ]);
 
 const httpUrl = z
@@ -55,6 +56,7 @@ const UpdateSettingsBody = z.object({
   signup_allowed_email_domains: z.string().max(2000).optional(),
   signup_blocked_email_domains: z.string().max(2000).optional(),
   signup_block_disposable: z.union([z.boolean(), z.enum(["true", "false"])]).optional(),
+  signup_official_providers_only: z.union([z.boolean(), z.enum(["true", "false"])]).optional(),
 });
 
 const JSON_KEYS = new Set(["docs_videos"]);

@@ -3,6 +3,38 @@ import { getSettingValue } from "../routes/admin/settings";
 export const SIGNUP_ALLOWED_DOMAINS_KEY = "signup_allowed_email_domains";
 export const SIGNUP_BLOCKED_DOMAINS_KEY = "signup_blocked_email_domains";
 export const SIGNUP_BLOCK_DISPOSABLE_KEY = "signup_block_disposable";
+export const SIGNUP_OFFICIAL_ONLY_KEY = "signup_official_providers_only";
+
+/**
+ * Built-in list of mainstream email providers. When "official providers only"
+ * mode is enabled, signup is restricted to these domains plus any custom
+ * allowlist domains the admin has configured.
+ */
+export const OFFICIAL_PROVIDERS: ReadonlySet<string> = new Set<string>([
+  // Google
+  "gmail.com", "googlemail.com",
+  // Microsoft
+  "outlook.com", "hotmail.com", "live.com", "msn.com",
+  "outlook.sa", "outlook.fr", "outlook.de", "outlook.es", "outlook.it",
+  "hotmail.fr", "hotmail.co.uk", "hotmail.de", "hotmail.es", "hotmail.it",
+  // Yahoo
+  "yahoo.com", "yahoo.co.uk", "yahoo.fr", "yahoo.de", "yahoo.es",
+  "yahoo.it", "yahoo.ca", "yahoo.com.au", "ymail.com", "rocketmail.com",
+  // Apple
+  "icloud.com", "me.com", "mac.com",
+  // Privacy-focused
+  "proton.me", "protonmail.com", "pm.me", "tutanota.com", "tuta.io",
+  // AOL / Verizon
+  "aol.com",
+  // GMX / Mail.com
+  "gmx.com", "gmx.net", "gmx.de", "gmx.fr", "mail.com",
+  // Zoho
+  "zoho.com", "zohomail.com",
+  // Yandex (Russia)
+  "yandex.com", "yandex.ru",
+  // Algeria / MENA ISPs commonly used as personal email
+  "algerietelecom.dz",
+]);
 
 const DISPOSABLE_DOMAINS = new Set<string>([
   "mailinator.com", "guerrillamail.com", "guerrillamail.net", "guerrillamail.org",
@@ -32,6 +64,7 @@ interface EmailPolicy {
   allowedDomains: Set<string> | null; // null = no allowlist (open registration)
   blockedDomains: Set<string>;
   blockDisposable: boolean;
+  officialOnly: boolean;
 }
 
 let cache: { value: EmailPolicy; expiresAt: number } | null = null;
@@ -53,10 +86,11 @@ function parseCsvDomains(raw: string | null): Set<string> {
 
 export async function getEmailPolicy(): Promise<EmailPolicy> {
   if (cache && cache.expiresAt > Date.now()) return cache.value;
-  const [allowedRaw, blockedRaw, blockDispRaw] = await Promise.all([
+  const [allowedRaw, blockedRaw, blockDispRaw, officialOnlyRaw] = await Promise.all([
     getSettingValue(SIGNUP_ALLOWED_DOMAINS_KEY),
     getSettingValue(SIGNUP_BLOCKED_DOMAINS_KEY),
     getSettingValue(SIGNUP_BLOCK_DISPOSABLE_KEY),
+    getSettingValue(SIGNUP_OFFICIAL_ONLY_KEY),
   ]);
   const allowed = parseCsvDomains(allowedRaw);
   const value: EmailPolicy = {
@@ -64,6 +98,8 @@ export async function getEmailPolicy(): Promise<EmailPolicy> {
     blockedDomains: parseCsvDomains(blockedRaw),
     // Default: block disposable emails unless explicitly disabled.
     blockDisposable: blockDispRaw == null ? true : blockDispRaw !== "false",
+    // Default: restrict to official providers unless explicitly disabled.
+    officialOnly: officialOnlyRaw == null ? true : officialOnlyRaw !== "false",
   };
   cache = { value, expiresAt: Date.now() + CACHE_TTL_MS };
   return value;
@@ -105,11 +141,22 @@ export async function validateSignupEmail(email: string): Promise<EmailValidatio
     };
   }
 
-  if (policy.allowedDomains && !policy.allowedDomains.has(domain)) {
+  // Effective allowlist combines the built-in OFFICIAL_PROVIDERS (when
+  // officialOnly mode is on) with any admin-configured custom domains.
+  let effectiveAllow: Set<string> | null = null;
+  if (policy.officialOnly && policy.allowedDomains) {
+    effectiveAllow = new Set([...OFFICIAL_PROVIDERS, ...policy.allowedDomains]);
+  } else if (policy.officialOnly) {
+    effectiveAllow = new Set(OFFICIAL_PROVIDERS);
+  } else if (policy.allowedDomains) {
+    effectiveAllow = policy.allowedDomains;
+  }
+
+  if (effectiveAllow && !effectiveAllow.has(domain)) {
     return {
       ok: false,
-      reason: `Registration is restricted to specific email providers (${[...policy.allowedDomains].slice(0, 5).join(", ")}${policy.allowedDomains.size > 5 ? "..." : ""}).`,
-      reasonAr: "التسجيل مقيّد بنطاقات بريد محددة.",
+      reason: "Only official email providers (Gmail, Outlook, Yahoo, iCloud, etc.) are allowed for registration.",
+      reasonAr: "يُقبل التسجيل فقط من مزودي البريد الرسميين (Gmail, Outlook, Yahoo, iCloud وغيرها).",
     };
   }
 
