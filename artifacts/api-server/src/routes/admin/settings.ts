@@ -24,6 +24,7 @@ const ALLOWED_KEYS = new Set([
   "google_oauth_enabled",
   "google_oauth_client_id",
   "google_oauth_client_secret",
+  "hide_organizations",
 ]);
 
 const httpUrl = z
@@ -63,9 +64,22 @@ const UpdateSettingsBody = z.object({
   google_oauth_enabled: z.union([z.boolean(), z.enum(["true", "false"])]).optional(),
   google_oauth_client_id: z.string().trim().max(500).optional(),
   google_oauth_client_secret: z.string().trim().max(500).optional(),
+  hide_organizations: z.union([z.boolean(), z.enum(["true", "false"])]).optional(),
 });
 
 const JSON_KEYS = new Set(["docs_videos"]);
+
+router.get("/public/ui-flags", async (_req, res): Promise<void> => {
+  const rows = await db
+    .select()
+    .from(systemSettingsTable)
+    .where(eq(systemSettingsTable.key, "hide_organizations"))
+    .limit(1);
+  const value = rows[0]?.value;
+  const hideOrganizations = value === "true" || value === "1";
+  res.set("Cache-Control", "public, max-age=30");
+  res.json({ hideOrganizations });
+});
 
 router.get("/admin/settings", requireAdmin, async (_req, res): Promise<void> => {
   const rows = await db

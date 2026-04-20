@@ -1,4 +1,4 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { LayoutDashboard, Activity, Key, CreditCard, BookOpen, LogOut, Moon, Sun, Languages, Settings, Webhook, FileText, Users, Wallet, Gift } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -15,6 +15,24 @@ export function PortalLayout({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const isAr = i18n.language === "ar";
 
+  const [hideOrganizations, setHideOrganizations] = useState<boolean>(() => {
+    const cached = localStorage.getItem("ui_hide_organizations");
+    return cached === "true";
+  });
+
+  useEffect(() => {
+    const apiBase = import.meta.env.BASE_URL.replace(/\/$/, "");
+    fetch(`${apiBase}/api/public/ui-flags`, { credentials: "include" })
+      .then((r) => (r.ok ? (r.json() as Promise<{ hideOrganizations?: boolean }>) : null))
+      .then((data) => {
+        if (!data) return;
+        const v = Boolean(data.hideOrganizations);
+        setHideOrganizations(v);
+        localStorage.setItem("ui_hide_organizations", v ? "true" : "false");
+      })
+      .catch(() => {});
+  }, []);
+
   const navigation = [
     { name: t("nav.dashboard"), href: "/portal", icon: LayoutDashboard, exact: true },
     { name: t("nav.apiKeys") || "API Keys", href: "/portal/api-keys", icon: Key, exact: false },
@@ -24,7 +42,9 @@ export function PortalLayout({ children }: { children: ReactNode }) {
     { name: t("nav.usage"), href: "/portal/usage", icon: Activity, exact: false },
     { name: "Webhooks", href: "/portal/webhooks", icon: Webhook, exact: false },
     { name: "Logs", href: "/portal/logs", icon: FileText, exact: false },
-    { name: t("nav.organizations") || "Organizations", href: "/portal/organizations", icon: Users, exact: false },
+    ...(hideOrganizations
+      ? []
+      : [{ name: t("nav.organizations") || "Organizations", href: "/portal/organizations", icon: Users, exact: false }]),
     { name: t("nav.docs") || "Docs", href: "/portal/docs", icon: BookOpen, exact: false },
     { name: "Settings", href: "/portal/settings", icon: Settings, exact: false },
   ];

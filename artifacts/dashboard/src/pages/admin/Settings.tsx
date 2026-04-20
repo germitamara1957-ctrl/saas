@@ -451,6 +451,8 @@ export default function AdminSettings() {
         </CardContent>
       </Card>
 
+      <AppearanceCard />
+
       <EmailPolicyCard />
 
       <GoogleOAuthCard />
@@ -459,6 +461,82 @@ export default function AdminSettings() {
 
       <TwoFactorCard />
     </div>
+  );
+}
+
+function AppearanceCard() {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [hideOrgs, setHideOrgs] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/admin/settings`, { credentials: "include" })
+      .then((r) => r.json() as Promise<Record<string, unknown>>)
+      .then((d) => {
+        setHideOrgs(d.hide_organizations === "true" || d.hide_organizations === true);
+      })
+      .catch(() => {
+        toast({ title: "Error", description: "Could not load appearance settings", variant: "destructive" });
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async (next: boolean) => {
+    setSaving(true);
+    try {
+      await saveSettings({ hide_organizations: next });
+      setHideOrgs(next);
+      try {
+        localStorage.setItem("ui_hide_organizations", next ? "true" : "false");
+      } catch {}
+      toast({
+        title: "Saved",
+        description: next ? "Organizations menu is now hidden." : "Organizations menu is now visible.",
+      });
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Failed to save",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Power className="h-5 w-5 text-primary" />
+          <CardTitle>Portal Appearance</CardTitle>
+        </div>
+        <CardDescription>
+          Hide non-essential menu items in the developer portal to keep onboarding focused.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loading ? (
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        ) : (
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div>
+              <p className="font-medium text-sm">Hide "Organizations" from sidebar</p>
+              <p className="text-xs text-muted-foreground">
+                When on, the Organizations item is hidden from the developer portal sidebar. Existing organization data and direct URLs are not affected.
+              </p>
+            </div>
+            <Switch
+              checked={hideOrgs}
+              disabled={saving}
+              onCheckedChange={handleSave}
+              data-testid="switch-hide-organizations"
+            />
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
