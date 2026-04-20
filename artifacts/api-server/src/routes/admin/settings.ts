@@ -7,7 +7,7 @@ import { z } from "zod";
 
 const router: IRouter = Router();
 
-const SENSITIVE_KEYS = new Set(["smtp_pass"]);
+const SENSITIVE_KEYS = new Set(["smtp_pass", "google_oauth_client_secret"]);
 
 const ALLOWED_KEYS = new Set([
   "smtp_host",
@@ -21,6 +21,9 @@ const ALLOWED_KEYS = new Set([
   "signup_blocked_email_domains",
   "signup_block_disposable",
   "signup_official_providers_only",
+  "google_oauth_enabled",
+  "google_oauth_client_id",
+  "google_oauth_client_secret",
 ]);
 
 const httpUrl = z
@@ -57,6 +60,9 @@ const UpdateSettingsBody = z.object({
   signup_blocked_email_domains: z.string().max(2000).optional(),
   signup_block_disposable: z.union([z.boolean(), z.enum(["true", "false"])]).optional(),
   signup_official_providers_only: z.union([z.boolean(), z.enum(["true", "false"])]).optional(),
+  google_oauth_enabled: z.union([z.boolean(), z.enum(["true", "false"])]).optional(),
+  google_oauth_client_id: z.string().trim().max(500).optional(),
+  google_oauth_client_secret: z.string().trim().max(500).optional(),
 });
 
 const JSON_KEYS = new Set(["docs_videos"]);
@@ -134,6 +140,10 @@ router.put("/admin/settings", requireAdmin, async (req, res): Promise<void> => {
   if (upserts.some((u) => u.key.startsWith("signup_"))) {
     const { invalidateEmailPolicyCache } = await import("../../lib/emailPolicy");
     invalidateEmailPolicyCache();
+  }
+  if (upserts.some((u) => u.key.startsWith("google_oauth_"))) {
+    const { invalidateGoogleOAuthCache } = await import("../../lib/googleOAuth");
+    invalidateGoogleOAuthCache();
   }
 
   res.json({ ok: true });

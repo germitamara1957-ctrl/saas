@@ -58,12 +58,14 @@ router.post("/admin/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
-  const valid = await verifyPassword(password, user.passwordHash);
+  const valid = user.passwordHash
+    ? await verifyPassword(password, user.passwordHash)
+    : false;
   if (!valid) {
     await logAuditEvent({
       action: "admin.login.failed",
       actorEmail: email,
-      details: "Wrong password",
+      details: user.passwordHash ? "Wrong password" : "Account has no password (OAuth-only)",
       ip,
     });
     res.status(401).json({ error: "Invalid credentials" });

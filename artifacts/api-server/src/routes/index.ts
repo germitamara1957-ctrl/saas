@@ -17,6 +17,7 @@ import adminIncidentsRouter from "./admin/incidents";
 import adminReferralsRouter from "./admin/referrals";
 
 import portalAuthRouter from "./portal/auth";
+import portalGoogleAuthRouter from "./portal/googleAuth";
 import portalMeRouter from "./portal/me";
 import portalUsageRouter from "./portal/usage";
 import portalPromoCodesRouter from "./portal/promoCodes";
@@ -83,6 +84,7 @@ router.use(adminReferralsRouter);
 
 // Portal routes — login is public, /me /api-keys /usage require portal JWT
 router.use(portalAuthRouter);
+router.use(portalGoogleAuthRouter);
 router.use(portalDocsRouter); // public — videos shown on /docs page for new users
 router.use("/portal/2fa", portalTwoFaRateLimit, requireAuth, portalTwoFaRouter);
 router.use("/portal/me", requireAuth);

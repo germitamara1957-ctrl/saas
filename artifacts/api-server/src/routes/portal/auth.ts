@@ -79,6 +79,14 @@ router.post("/portal/auth/login", async (req, res): Promise<void> => {
       return;
     }
 
+    // OAuth-only accounts have no password — guide them to the right flow.
+    if (!user.passwordHash) {
+      res.status(401).json({
+        error: "This account uses Google sign-in. Click \"Continue with Google\" instead.",
+      });
+      return;
+    }
+
     const valid = await verifyPassword(password, user.passwordHash);
     if (!valid) {
       res.status(401).json({ error: "Invalid credentials" });
@@ -550,6 +558,15 @@ router.delete("/portal/auth/account", requireAuth, async (req, res): Promise<voi
 
   if (!user) {
     res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  // OAuth-only accounts (passwordHash=null) cannot self-delete via password
+  // confirmation. They must set a password first via forgot-password.
+  if (!user.passwordHash) {
+    res.status(400).json({
+      error: "This account uses Google sign-in. Set a password via Forgot Password first to delete your account.",
+    });
     return;
   }
 

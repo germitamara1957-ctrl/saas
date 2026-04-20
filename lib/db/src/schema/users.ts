@@ -6,7 +6,13 @@ import { plansTable } from "./plans";
 export const usersTable = pgTable("users", {
   id: serial("id").primaryKey(),
   email: text("email").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
+  // Nullable to support OAuth-only accounts (Google sign-in, etc).
+  // For password-based accounts this is always set.
+  passwordHash: text("password_hash"),
+  // Google OAuth subject identifier (sub claim). Set when the user signs in
+  // with Google for the first time. Unique so the same Google account cannot
+  // be linked to two different local users.
+  googleId: text("google_id").unique(),
   name: text("name").notNull(),
   role: text("role").notNull().default("developer"),
   isActive: boolean("is_active").notNull().default(true),

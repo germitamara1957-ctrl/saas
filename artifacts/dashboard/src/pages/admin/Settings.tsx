@@ -453,10 +453,155 @@ export default function AdminSettings() {
 
       <EmailPolicyCard />
 
+      <GoogleOAuthCard />
+
       <ChargilySecretsCard />
 
       <TwoFactorCard />
     </div>
+  );
+}
+
+function GoogleOAuthCard() {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [enabled, setEnabled] = useState(false);
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [redirectUri, setRedirectUri] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      fetch(`${API_BASE}/api/admin/settings`, { credentials: "include" }).then(
+        (r) => r.json() as Promise<Record<string, unknown>>,
+      ),
+      fetch(`${API_BASE}/api/portal/auth/google/redirect-uri`, { credentials: "include" })
+        .then((r) => (r.ok ? r.json() as Promise<{ redirectUri: string }> : { redirectUri: "" }))
+        .catch(() => ({ redirectUri: "" })),
+    ])
+      .then(([d, r]) => {
+        setEnabled(d.google_oauth_enabled === "true" || d.google_oauth_enabled === true);
+        setClientId(typeof d.google_oauth_client_id === "string" ? d.google_oauth_client_id : "");
+        setClientSecret(typeof d.google_oauth_client_secret === "string" ? d.google_oauth_client_secret : "");
+        setRedirectUri(r.redirectUri ?? "");
+      })
+      .catch(() => {
+        toast({ title: "Error", description: "Could not load Google OAuth settings", variant: "destructive" });
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const copyRedirect = () => {
+    if (!redirectUri) return;
+    navigator.clipboard.writeText(redirectUri);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+    toast({ title: "Copied", description: "Redirect URI copied to clipboard." });
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const payload: Record<string, unknown> = {
+        google_oauth_enabled: enabled,
+        google_oauth_client_id: clientId.trim(),
+      };
+      if (clientSecret && clientSecret !== "••••••••") {
+        payload.google_oauth_client_secret = clientSecret.trim();
+      }
+      await saveSettings(payload);
+      toast({ title: "Saved", description: "Google sign-in settings saved." });
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Failed to save",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <KeyRound className="h-5 w-5 text-primary" />
+          <CardTitle>Google Sign-in</CardTitle>
+        </div>
+        <CardDescription>
+          Let users sign in with their Google account. Configure your OAuth client in Google Cloud Console
+          (APIs & Services → Credentials → OAuth 2.0 Client ID), then paste the Client ID and Client Secret here.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loading ? (
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        ) : (
+          <>
+            <div className="flex items-center justify-between rounded-md border p-3">
+              <div>
+                <p className="font-medium text-sm">Enable Google Sign-in</p>
+                <p className="text-xs text-muted-foreground">
+                  When off, the "Continue with Google" button is hidden on Login and Signup.
+                </p>
+              </div>
+              <Switch
+                checked={enabled}
+                onCheckedChange={setEnabled}
+                data-testid="switch-google-oauth-enabled"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Authorized Redirect URI</Label>
+              <div className="flex items-center gap-2">
+                <Input value={redirectUri} readOnly className="font-mono text-xs" />
+                <Button type="button" variant="outline" size="icon" onClick={copyRedirect} title="Copy">
+                  {copied ? <CheckCircle2 className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Add this exact URL to your Google OAuth client's "Authorized redirect URIs" list.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="g-client-id">Client ID</Label>
+              <Input
+                id="g-client-id"
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+                placeholder="1234567890-abc...apps.googleusercontent.com"
+                data-testid="input-google-client-id"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="g-client-secret">Client Secret</Label>
+              <Input
+                id="g-client-secret"
+                type="password"
+                value={clientSecret}
+                onChange={(e) => setClientSecret(e.target.value)}
+                placeholder="GOCSPX-..."
+                data-testid="input-google-client-secret"
+              />
+              <p className="text-xs text-muted-foreground">
+                Stored encrypted. Leave as ••••••••• to keep the existing secret unchanged.
+              </p>
+            </div>
+
+            <Button onClick={handleSave} disabled={saving} data-testid="button-save-google-oauth">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+              Save Google Settings
+            </Button>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
