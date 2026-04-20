@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, desc } from "drizzle-orm";
-import { db, paymentIntentsTable, usersTable, auditLogsTable } from "@workspace/db";
+import { db, paymentIntentsTable, usersTable, auditLogsTable, plansTable } from "@workspace/db";
 import { createCheckout, retrieveCheckout, ChargilyError, ChargilyConfigError } from "../../lib/chargily";
 import { getChargilySettings, dzdToUsd } from "../../lib/chargilySettings";
 import { logger } from "../../lib/logger";
@@ -129,6 +129,127 @@ router.post("/portal/billing/topup", async (req, res): Promise<void> => {
     checkoutUrl: checkout.checkout_url,
     amountDzd: amountInt,
     amountUsd,
+    exchangeRate: settings.dzdToUsdRate,
+    status: "pending",
+  });
+});
+
+/**
+ * POST /portal/billing/plan-checkout { planId }
+ *
+ * Creates a Chargily checkout for the price of a paid plan, billed in DZD.
+ * On webhook `paid`, the user is enrolled into the plan automatically (see
+ * webhooks/chargily.ts) instead of crediting the top-up balance.
+ */
+router.post("/portal/billing/plan-checkout", async (req, res): Promise<void> => {
+  const userId = Number(req.authUser!.sub);
+  const { planId } = req.body as { planId?: unknown };
+
+  const pid = Number(planId);
+  if (!Number.isInteger(pid) || pid <= 0) {
+    res.status(400).json({ error: "planId must be a positive integer" });
+    return;
+  }
+
+  const settings = await getChargilySettings();
+  if (!settings.enabled) {
+    res.status(403).json({ error: "Plan upgrades via online payment are currently disabled" });
+    return;
+  }
+
+  const [plan] = await db
+    .select()
+    .from(plansTable)
+    .where(and(eq(plansTable.id, pid), eq(plansTable.isActive, true)))
+    .limit(1);
+  if (!plan) {
+    res.status(404).json({ error: "Plan not found" });
+    return;
+  }
+  if (plan.priceUsd <= 0) {
+    res.status(400).json({ error: "Free plans do not require payment" });
+    return;
+  }
+
+  // priceUsd → DZD using current exchange rate; round up to nearest integer DZD.
+  const amountDzd = Math.ceil(plan.priceUsd * settings.dzdToUsdRate);
+  const amountUsd = dzdToUsd(amountDzd, settings.dzdToUsdRate);
+
+  const [user] = await db
+    .select({ id: usersTable.id, email: usersTable.email, name: usersTable.name })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  const baseUrl = (process.env.PUBLIC_BASE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
+  const successUrl = `${baseUrl}/portal/billing/result?status=success&purpose=plan`;
+  const failureUrl = `${baseUrl}/portal/billing/result?status=failure&purpose=plan`;
+  const webhookUrl = `${baseUrl}/webhooks/chargily`;
+
+  let checkout;
+  try {
+    checkout = await createCheckout({
+      amount: amountDzd,
+      currency: "dzd",
+      success_url: successUrl,
+      failure_url: failureUrl,
+      webhook_endpoint: webhookUrl,
+      description: `AI Gateway · ${plan.name} plan · user #${userId} · ${amountDzd} DZD`,
+      language: "ar",
+      pass_fees_to_customer: true,
+      metadata: { userId, planId: pid, purpose: "plan_upgrade", amountUsd, exchangeRate: settings.dzdToUsdRate },
+    });
+  } catch (err) {
+    if (err instanceof ChargilyConfigError) {
+      logger.error({ err }, "Chargily not configured");
+      res.status(503).json({ error: "Payment gateway is not configured. Please contact support." });
+      return;
+    }
+    if (err instanceof ChargilyError) {
+      logger.error({ err: err.message, status: err.status, body: err.body }, "Chargily plan checkout creation failed");
+      res.status(502).json({ error: "Payment gateway error. Please try again later." });
+      return;
+    }
+    throw err;
+  }
+
+  const [intent] = await db
+    .insert(paymentIntentsTable)
+    .values({
+      userId,
+      chargilyCheckoutId: checkout.id,
+      amountDzd,
+      amountUsd,
+      exchangeRate: settings.dzdToUsdRate,
+      currency: "dzd",
+      status: "pending",
+      mode: settings.mode,
+      checkoutUrl: checkout.checkout_url,
+      metadata: JSON.stringify({ language: "ar", purpose: "plan_upgrade", planId: pid, planName: plan.name }),
+    })
+    .returning();
+
+  await db.insert(auditLogsTable).values({
+    action: "billing.plan_upgrade.intent_created",
+    actorId: userId,
+    actorEmail: user.email,
+    targetId: intent.id,
+    details: JSON.stringify({ amountDzd, amountUsd, planId: pid, planName: plan.name, checkoutId: checkout.id, mode: settings.mode }),
+    ip: req.ip,
+  });
+
+  res.status(201).json({
+    intentId: intent.id,
+    checkoutId: checkout.id,
+    checkoutUrl: checkout.checkout_url,
+    amountDzd,
+    amountUsd,
+    planId: pid,
+    planName: plan.name,
     exchangeRate: settings.dzdToUsdRate,
     status: "pending",
   });

@@ -7,8 +7,12 @@ import {
   chargilyWebhookEventsTable,
   usersTable,
   auditLogsTable,
+  plansTable,
+  apiKeysTable,
 } from "@workspace/db";
+import { isNull } from "drizzle-orm";
 import { verifyWebhookSignature } from "../../lib/chargily";
+import { generateApiKey, encryptApiKey } from "../../lib/crypto";
 import { logger } from "../../lib/logger";
 
 const router: IRouter = Router();
@@ -135,28 +139,167 @@ router.post(
       }
 
       const credited = updated[0];
-      // Atomically credit the user's topup balance. Using SQL arithmetic
-      // avoids a race where two parallel updates would clobber each other.
-      await db
-        .update(usersTable)
-        .set({
-          topupCreditBalance: sql`${usersTable.topupCreditBalance} + ${credited.amountUsd}`,
-        })
-        .where(eq(usersTable.id, credited.userId));
 
-      await db.insert(auditLogsTable).values({
-        action: "billing.topup.credited",
-        actorId: credited.userId,
-        targetId: credited.id,
-        details: JSON.stringify({
-          amountUsd: credited.amountUsd,
-          checkoutId,
-          eventId,
-        }),
-        ip: req.ip,
-      });
+      // Branch on intent purpose: top-up (default) or plan upgrade.
+      let purpose: "topup" | "plan_upgrade" = "topup";
+      let targetPlanId: number | null = null;
+      try {
+        const meta = intent.metadata ? JSON.parse(intent.metadata) as { purpose?: string; planId?: number } : null;
+        if (meta?.purpose === "plan_upgrade" && Number.isInteger(meta.planId)) {
+          purpose = "plan_upgrade";
+          targetPlanId = meta.planId!;
+        }
+      } catch {
+        // Malformed metadata → treat as top-up.
+      }
 
-      logger.info({ intentId: credited.id, userId: credited.userId, amountUsd: credited.amountUsd }, "Chargily top-up credited");
+      // Reliability: if any post-CAS fulfillment step throws, we revert the
+      // intent status back to "pending" and remove the dedup row so Chargily's
+      // retry can attempt fulfillment again. Without this, a transient DB error
+      // mid-fulfillment would permanently lose the paid event.
+      try {
+      if (purpose === "plan_upgrade" && targetPlanId !== null) {
+        const [plan] = await db
+          .select()
+          .from(plansTable)
+          .where(and(eq(plansTable.id, targetPlanId), eq(plansTable.isActive, true)))
+          .limit(1);
+
+        if (!plan) {
+          // Plan was deleted between checkout and webhook — fall back to crediting.
+          logger.warn({ intentId: credited.id, planId: targetPlanId }, "Plan no longer active — crediting top-up balance instead");
+          await db
+            .update(usersTable)
+            .set({ topupCreditBalance: sql`${usersTable.topupCreditBalance} + ${credited.amountUsd}` })
+            .where(eq(usersTable.id, credited.userId));
+        } else {
+          // Enroll user — same logic as POST /portal/plans/:planId/enroll.
+          const existingKeys = await db
+            .select()
+            .from(apiKeysTable)
+            .where(and(
+              eq(apiKeysTable.userId, credited.userId),
+              eq(apiKeysTable.isActive, true),
+              isNull(apiKeysTable.organizationId),
+            ))
+            .limit(10);
+
+          const planlessKey = existingKeys.find(k => k.planId === null);
+          const alreadyOnPlan = existingKeys.find(k => k.planId === targetPlanId);
+
+          if (alreadyOnPlan) {
+            // User already on this plan — top up monthly credits to extend the period.
+            const now = new Date();
+            const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+            await db.update(usersTable).set({
+              currentPlanId: targetPlanId,
+              currentPeriodStartedAt: now,
+              currentPeriodEnd: periodEnd,
+              ...(plan.monthlyCredits > 0 ? { creditBalance: sql`credit_balance + ${plan.monthlyCredits}` } : {}),
+            }).where(eq(usersTable.id, credited.userId));
+          } else if (planlessKey) {
+            await db.transaction(async (tx) => {
+              await tx.update(apiKeysTable)
+                .set({ planId: targetPlanId })
+                .where(eq(apiKeysTable.id, planlessKey.id));
+              const now = new Date();
+              const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+              const userUpdate: Record<string, unknown> = {
+                currentPlanId: targetPlanId,
+                currentPeriodStartedAt: now,
+                currentPeriodEnd: periodEnd,
+              };
+              if (plan.monthlyCredits > 0) {
+                userUpdate["creditBalance"] = sql`credit_balance + ${plan.monthlyCredits}`;
+              }
+              await tx.update(usersTable).set(userUpdate).where(eq(usersTable.id, credited.userId));
+            });
+          } else {
+            const { rawKey, keyHash, keyPrefix } = generateApiKey();
+            const keyEncrypted = encryptApiKey(rawKey);
+            await db.transaction(async (tx) => {
+              await tx.insert(apiKeysTable).values({
+                userId: credited.userId,
+                planId: targetPlanId,
+                keyPrefix,
+                keyHash,
+                keyEncrypted,
+                name: `${plan.name} Key`,
+                isActive: true,
+              });
+              const now = new Date();
+              const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+              const userUpdate: Record<string, unknown> = {
+                currentPlanId: targetPlanId,
+                currentPeriodStartedAt: now,
+                currentPeriodEnd: periodEnd,
+              };
+              if (plan.monthlyCredits > 0) {
+                userUpdate["creditBalance"] = sql`credit_balance + ${plan.monthlyCredits}`;
+              }
+              await tx.update(usersTable).set(userUpdate).where(eq(usersTable.id, credited.userId));
+            });
+          }
+
+          await db.insert(auditLogsTable).values({
+            action: "billing.plan_upgrade.activated",
+            actorId: credited.userId,
+            targetId: credited.id,
+            details: JSON.stringify({
+              amountUsd: credited.amountUsd,
+              planId: targetPlanId,
+              planName: plan.name,
+              checkoutId,
+              eventId,
+            }),
+            ip: req.ip,
+          });
+
+          logger.info({ intentId: credited.id, userId: credited.userId, planId: targetPlanId }, "Chargily plan upgrade activated");
+        }
+      } else {
+        // Default: credit the user's top-up balance. Using SQL arithmetic avoids
+        // a race where two parallel updates would clobber each other.
+        await db
+          .update(usersTable)
+          .set({
+            topupCreditBalance: sql`${usersTable.topupCreditBalance} + ${credited.amountUsd}`,
+          })
+          .where(eq(usersTable.id, credited.userId));
+
+        await db.insert(auditLogsTable).values({
+          action: "billing.topup.credited",
+          actorId: credited.userId,
+          targetId: credited.id,
+          details: JSON.stringify({
+            amountUsd: credited.amountUsd,
+            checkoutId,
+            eventId,
+          }),
+          ip: req.ip,
+        });
+
+        logger.info({ intentId: credited.id, userId: credited.userId, amountUsd: credited.amountUsd }, "Chargily top-up credited");
+      }
+      } catch (fulfillErr) {
+        // Revert the CAS so a retried webhook can re-attempt fulfillment.
+        // Also remove the dedup row so the retry is not short-circuited as duplicate.
+        logger.error({ err: fulfillErr, intentId: credited.id, eventId }, "Chargily fulfillment failed — reverting for retry");
+        try {
+          await db
+            .update(paymentIntentsTable)
+            .set({ status: "pending", creditedAt: null, webhookReceivedAt: null })
+            .where(and(eq(paymentIntentsTable.id, credited.id), eq(paymentIntentsTable.status, "paid")));
+          await db
+            .delete(chargilyWebhookEventsTable)
+            .where(eq(chargilyWebhookEventsTable.eventId, eventId));
+        } catch (revertErr) {
+          logger.error({ err: revertErr, intentId: credited.id, eventId }, "Chargily fulfillment revert failed");
+        }
+        // 500 → Chargily will retry per its delivery policy.
+        res.status(500).json({ error: "Fulfillment failed; please retry" });
+        return;
+      }
 
       // Referral commission (Phase 1) — basis is the actual USD revenue
       // (NOT the credit value granted to the user). Failure here must not

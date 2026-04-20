@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { Link } from "wouter";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   useListPortalPlans,
@@ -71,6 +70,7 @@ export default function PortalPlans() {
   const { toast } = useToast();
 
   const [enrollingPlanId, setEnrollingPlanId] = useState<number | null>(null);
+  const [upgradingPlanId, setUpgradingPlanId] = useState<number | null>(null);
   const [newKeyInfo, setNewKeyInfo] = useState<EnrollResult | null>(null);
   const [keyCopied, setKeyCopied] = useState(false);
   const [chargilyEnabled, setChargilyEnabled] = useState(false);
@@ -128,6 +128,32 @@ export default function PortalPlans() {
     setEnrollingPlanId(planId);
     enrollMutation.mutate(planId);
   };
+
+  const upgradeMutation = useMutation({
+    mutationFn: async (planId: number): Promise<{ checkoutUrl: string }> => {
+      setUpgradingPlanId(planId);
+      const res = await authFetch(`/api/portal/billing/plan-checkout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not start payment");
+      return data as { checkoutUrl: string };
+    },
+    onSuccess: (data) => {
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+      } else {
+        toast({ title: "Payment error", description: "No checkout URL returned.", variant: "destructive" });
+        setUpgradingPlanId(null);
+      }
+    },
+    onError: (e: Error) => {
+      toast({ title: "Upgrade failed", description: e.message, variant: "destructive" });
+      setUpgradingPlanId(null);
+    },
+  });
 
   const copyNewKey = () => {
     if (!newKeyInfo?.fullKey) return;
@@ -333,13 +359,19 @@ export default function PortalPlans() {
                       }
                     </Button>
                   ) : (
-                    /* Paid plans → Chargily Top up (if enabled) + WhatsApp */
+                    /* Paid plans → Upgrade via Chargily (if enabled) + WhatsApp fallback */
                     <>
                       {chargilyEnabled && (
-                        <Button className="w-full" asChild>
-                          <Link href="/portal/billing">
-                            <Wallet className="h-4 w-4 mr-2" /> Top up Credits (DZD)
-                          </Link>
+                        <Button
+                          className="w-full"
+                          onClick={() => upgradeMutation.mutate(plan.id)}
+                          disabled={upgradingPlanId === plan.id}
+                        >
+                          {upgradingPlanId === plan.id ? (
+                            <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Redirecting…</>
+                          ) : (
+                            <><ArrowUpCircle className="h-4 w-4 mr-2" /> Upgrade — Pay ${plan.priceUsd}</>
+                          )}
                         </Button>
                       )}
                       <Button
@@ -362,7 +394,11 @@ export default function PortalPlans() {
 
       <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground flex items-center gap-2">
         <MessageCircle className="h-4 w-4 shrink-0 text-[#25D366]" />
-        <p>For paid plan subscriptions, use the WhatsApp button on the plan card to reach us directly.</p>
+        <p>
+          {chargilyEnabled
+            ? "Click \"Upgrade\" to pay online via Chargily, or use WhatsApp to arrange payment with us directly."
+            : "For paid plan subscriptions, use the WhatsApp button on the plan card to reach us directly."}
+        </p>
       </div>
 
       {/* New key reveal dialog — only shown when a brand new key was created */}
