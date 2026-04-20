@@ -79,6 +79,7 @@ export interface ContentCheckResult {
  * Returns immediately on first match without calling Vertex AI.
  */
 function extractText(msg: ChatMessage): string {
+  if (msg.content === null || msg.content === undefined) return "";
   if (typeof msg.content === "string") return msg.content;
   return msg.content
     .filter((p) => p.type === "text")

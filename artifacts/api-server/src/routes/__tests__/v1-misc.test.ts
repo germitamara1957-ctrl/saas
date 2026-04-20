@@ -130,15 +130,15 @@ vi.mock("../../lib/vertexai", () => ({
     return "openai-compat";
   }),
   normalizeToPlanModelId: vi.fn((model: string) => model),
-  chatWithGemini: vi.fn().mockResolvedValue({ content: "Hello!", inputTokens: 100, outputTokens: 50 }),
-  chatWithOpenAICompat: vi.fn().mockResolvedValue({ content: "Hi!", inputTokens: 80, outputTokens: 40 }),
+  chatWithGemini: vi.fn().mockResolvedValue({ content: "Hello!", inputTokens: 100, outputTokens: 50, finishReason: "stop" as const }),
+  chatWithOpenAICompat: vi.fn().mockResolvedValue({ content: "Hi!", inputTokens: 80, outputTokens: 40, finishReason: "stop" as const }),
   streamChatWithGemini: vi.fn(async function* () {
     yield { type: "delta" as const, text: "Hello " };
-    yield { type: "done" as const, inputTokens: 100, outputTokens: 50 };
+    yield { type: "done" as const, inputTokens: 100, outputTokens: 50, finishReason: "stop" as const };
   }),
   streamChatWithOpenAICompat: vi.fn(async function* () {
     yield { type: "delta" as const, text: "Hello " };
-    yield { type: "done" as const, inputTokens: 80, outputTokens: 40 };
+    yield { type: "done" as const, inputTokens: 80, outputTokens: 40, finishReason: "stop" as const };
   }),
 }));
 
@@ -205,7 +205,7 @@ beforeEach(async () => {
     return "openai-compat";
   });
   vi.mocked(vertexai.normalizeToPlanModelId).mockImplementation((model: string) => model);
-  vi.mocked(vertexai.chatWithGemini).mockResolvedValue({ content: "Hello!", inputTokens: 100, outputTokens: 50 });
+  vi.mocked(vertexai.chatWithGemini).mockResolvedValue({ content: "Hello!", inputTokens: 100, outputTokens: 50, finishReason: "stop" as const });
 
   const chatUtils = await import("../../lib/chatUtils");
   vi.mocked(chatUtils.deductAndLog).mockResolvedValue(true);

@@ -119,12 +119,12 @@ vi.mock("../../lib/vertexai", () => ({
   streamChatWithGemini: vi.fn(async function* () {
     yield { type: "delta" as const, text: "Hello " };
     yield { type: "delta" as const, text: "world!" };
-    yield { type: "done" as const, inputTokens: 100, outputTokens: 50 };
+    yield { type: "done" as const, inputTokens: 100, outputTokens: 50, finishReason: "stop" as const };
   }),
   streamChatWithOpenAICompat: vi.fn(async function* () {
     yield { type: "delta" as const, text: "Streamed " };
     yield { type: "delta" as const, text: "response." };
-    yield { type: "done" as const, inputTokens: 80, outputTokens: 40 };
+    yield { type: "done" as const, inputTokens: 80, outputTokens: 40, finishReason: "stop" as const };
   }),
 }));
 
@@ -180,11 +180,11 @@ beforeEach(async () => {
     return "openai-compat";
   });
   vi.mocked(vertexai.normalizeToPlanModelId).mockImplementation((model: string) => model);
-  vi.mocked(vertexai.chatWithGemini).mockResolvedValue({ content: "Hello!", inputTokens: 100, outputTokens: 50 });
-  vi.mocked(vertexai.chatWithOpenAICompat).mockResolvedValue({ content: "Hi!", inputTokens: 80, outputTokens: 40 });
+  vi.mocked(vertexai.chatWithGemini).mockResolvedValue({ content: "Hello!", inputTokens: 100, outputTokens: 50, finishReason: "stop" as const });
+  vi.mocked(vertexai.chatWithOpenAICompat).mockResolvedValue({ content: "Hi!", inputTokens: 80, outputTokens: 40, finishReason: "stop" as const });
   vi.mocked(vertexai.streamChatWithGemini).mockImplementation(async function* () {
     yield { type: "delta" as const, text: "Hello " };
-    yield { type: "done" as const, inputTokens: 100, outputTokens: 50 };
+    yield { type: "done" as const, inputTokens: 100, outputTokens: 50, finishReason: "stop" as const };
   });
 });
 
@@ -385,7 +385,7 @@ describe("POST /v1/chat — Streaming (SSE)", () => {
     const vertexai = await import("../../lib/vertexai");
     vi.mocked(vertexai.streamChatWithGemini).mockImplementationOnce(async function* () {
       throw new Error("Vertex API unavailable");
-      yield { type: "done" as const, inputTokens: 0, outputTokens: 0 };
+      yield { type: "done" as const, inputTokens: 0, outputTokens: 0, finishReason: "stop" as const };
     });
 
     const { default: app } = await import("../../app");

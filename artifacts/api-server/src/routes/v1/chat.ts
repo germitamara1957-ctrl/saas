@@ -13,6 +13,8 @@ import {
   streamChatWithOpenAICompat,
   streamChatWithMistralRawPredict,
   type ChatMessage,
+  type ChatOptions,
+  type ToolCall,
 } from "../../lib/vertexai";
 import { calculateChatCost } from "../../lib/billing";
 import { generateRequestId } from "../../lib/crypto";
@@ -27,10 +29,8 @@ import { dispatchWebhooks } from "../../lib/webhookDispatcher";
 
 const router: IRouter = Router();
 
-// Local lenient body schema. The generated api-zod ChatCompletionBody only
-// permits string content, but we support OpenAI-style multimodal arrays with
-// text + binary parts (image/audio/video/document). We accept either form here
-// and let the provider layer do the actual conversion.
+// Local lenient body schema. Accepts plain text, OpenAI multimodal arrays,
+// AND OpenAI tool-calling messages (assistant.tool_calls + role:"tool").
 const ContentPartSchema = z.union([
   z.object({ type: z.literal("text"), text: z.string() }),
   z.object({
@@ -38,19 +38,58 @@ const ContentPartSchema = z.union([
     mimeType: z.string(),
     base64: z.string(),
   }),
+  // OpenAI multimodal image_url part — we accept and convert to our format.
+  z.object({
+    type: z.literal("image_url"),
+    image_url: z.union([z.string(), z.object({ url: z.string() })]),
+  }),
+]);
+
+const ToolCallSchema = z.object({
+  id: z.string(),
+  type: z.literal("function").default("function"),
+  function: z.object({
+    name: z.string(),
+    arguments: z.string(),
+  }),
+});
+
+const MessageSchema = z.object({
+  role: z.string(),
+  content: z.union([z.string(), z.array(ContentPartSchema).min(1), z.null()]).optional(),
+  tool_calls: z.array(ToolCallSchema).optional(),
+  tool_call_id: z.string().optional(),
+  name: z.string().optional(),
+});
+
+const ToolDefinitionSchema = z.object({
+  type: z.literal("function").default("function"),
+  function: z.object({
+    name: z.string(),
+    description: z.string().optional(),
+    parameters: z.record(z.unknown()).optional(),
+  }),
+});
+
+const ToolChoiceSchema = z.union([
+  z.literal("auto"),
+  z.literal("none"),
+  z.literal("required"),
+  z.object({
+    type: z.literal("function"),
+    function: z.object({ name: z.string() }),
+  }),
 ]);
 
 const ChatBodySchema = z.object({
   model: z.string(),
-  messages: z.array(
-    z.object({
-      role: z.string(),
-      content: z.union([z.string(), z.array(ContentPartSchema).min(1)]),
-    }),
-  ).min(1),
+  messages: z.array(MessageSchema).min(1),
   stream: z.boolean().default(false),
   temperature: z.number().optional(),
   maxOutputTokens: z.number().optional(),
+  tools: z.array(ToolDefinitionSchema).optional(),
+  tool_choice: ToolChoiceSchema.optional(),
+  parallel_tool_calls: z.boolean().optional(),
 });
 
 /**
@@ -79,12 +118,49 @@ function sendError(
   }
 }
 
+/** Convert image_url parts to our internal format so providers see uniform shape. */
+function normalizeContentPart(p: unknown): { type: string; text?: string; mimeType?: string; base64?: string } {
+  const part = p as Record<string, unknown>;
+  if (part.type === "image_url") {
+    const imageUrl = part.image_url as string | { url: string };
+    const url = typeof imageUrl === "string" ? imageUrl : imageUrl.url;
+    // data:<mime>;base64,<data>
+    const m = url.match(/^data:([^;]+);base64,(.+)$/);
+    if (m) return { type: "image", mimeType: m[1]!, base64: m[2]! };
+    // External URLs: pass as-is (Gemini path will reject; compat may accept).
+    return { type: "image_url", text: url };
+  }
+  return part as { type: string; text?: string; mimeType?: string; base64?: string };
+}
+
+function normalizeMessage(m: z.infer<typeof MessageSchema>): ChatMessage {
+  const role: ChatMessage["role"] =
+    m.role === "assistant" || m.role === "model" ? "model" :
+    m.role === "system" ? "system" :
+    m.role === "tool" || m.role === "function" ? "tool" :
+    "user";
+
+  let content: ChatMessage["content"];
+  if (m.content === null || m.content === undefined) {
+    content = null;
+  } else if (typeof m.content === "string") {
+    content = m.content;
+  } else {
+    content = m.content.map(normalizeContentPart) as ChatMessage["content"];
+  }
+
+  const out: ChatMessage = { role, content };
+  if (m.tool_calls && m.tool_calls.length) out.tool_calls = m.tool_calls;
+  if (m.tool_call_id) out.tool_call_id = m.tool_call_id;
+  if (m.name) out.name = m.name;
+  return out;
+}
+
 async function handleChat(
   req: Parameters<Parameters<typeof router.post>[1]>[0],
   res: Parameters<Parameters<typeof router.post>[1]>[1],
   openaiCompat: boolean,
 ): Promise<void> {
-  // Accept both our format and OpenAI format
   const body = req.body as Record<string, unknown>;
   const normalizedBody = {
     model: body.model,
@@ -92,6 +168,9 @@ async function handleChat(
     stream: body.stream ?? false,
     temperature: body.temperature,
     maxOutputTokens: (body.maxOutputTokens ?? body.max_tokens) as number | undefined,
+    tools: body.tools,
+    tool_choice: body.tool_choice,
+    parallel_tool_calls: body.parallel_tool_calls,
   };
 
   const parsed = ChatBodySchema.safeParse(normalizedBody);
@@ -100,13 +179,15 @@ async function handleChat(
     return;
   }
 
-  const { model: rawModel, messages, temperature, maxOutputTokens, stream } = parsed.data;
+  const {
+    model: rawModel, messages, temperature, maxOutputTokens, stream,
+    tools, tool_choice, parallel_tool_calls,
+  } = parsed.data;
   const model = rawModel.toLowerCase().trim();
   const apiKey = req.apiKey!;
   const requestId = req.preassignedRequestId ?? generateRequestId();
   const created = Math.floor(Date.now() / 1000);
 
-  // imagen-* and veo-* are generation-only models; they cannot be used as chat models
   if (model.startsWith("imagen-") || model.startsWith("veo-")) {
     sendError(
       res, 400,
@@ -122,8 +203,6 @@ async function handleChat(
   const planModel = normalizeToPlanModelId(model);
   const modelInPlan = isModelInPlan(allowed, planModel);
 
-  // If model is NOT in the user's plan, they can only use it via top-up credit.
-  // Reject early if they have no top-up balance — saves an expensive call.
   if (!modelInPlan && apiKey.topupCredit <= 0) {
     const errMsg =
       `Model "${model}" is not included in your current plan ("${apiKey.plan.name}"). ` +
@@ -150,7 +229,6 @@ async function handleChat(
     return;
   }
 
-  // ── Layer 4 (pre-check): reject immediately if account is already suspended ──
   const suspended = await isGuardrailSuspended(apiKey.userId);
   if (suspended) {
     const errMsg =
@@ -161,15 +239,19 @@ async function handleChat(
   }
 
   const estimatedInputTokens = messages.reduce((acc, m) => {
-    const rawContent = m.content as string | Array<{ type: string; text?: string }>;
-    const text = typeof rawContent === "string"
-      ? rawContent
-      : rawContent.filter((p) => p.type === "text").map((p) => p.text ?? "").join(" ");
+    const rawContent = m.content;
+    let text = "";
+    if (typeof rawContent === "string") text = rawContent;
+    else if (Array.isArray(rawContent)) {
+      text = rawContent.map((p) => {
+        const part = p as { type?: string; text?: string };
+        return part.type === "text" ? (part.text ?? "") : "";
+      }).join(" ");
+    }
     return acc + Math.ceil(text.length / 4);
   }, 0);
   const estimatedOutputTokens = maxOutputTokens ?? 2000;
   const minEstimatedCost = calculateChatCost(planModel, estimatedInputTokens, estimatedOutputTokens);
-  // If model is in plan: any combined balance can pay. Else: top-up only.
   const availableForThisModel = modelInPlan ? apiKey.accountCreditBalance : apiKey.topupCredit;
   if (availableForThisModel < minEstimatedCost) {
     const errMsg = modelInPlan
@@ -183,13 +265,10 @@ async function handleChat(
     return;
   }
 
-  const mappedMessages: ChatMessage[] = messages.map((m) => ({
-    role: m.role === "assistant" ? "model" : "user",
-    content: m.content,
-  }));
+  const mappedMessages: ChatMessage[] = messages.map(normalizeMessage);
 
-  // ── Layer 3: Keyword content check ────────────────────────────────────────
-  const contentCheck = checkContent(mappedMessages);
+  // ── Layer 3: Keyword content check (text-only, skip tool/system messages) ──
+  const contentCheck = checkContent(mappedMessages.filter((m) => m.role === "user" || m.role === "model"));
   if (contentCheck.blocked) {
     const violation = await recordViolation(apiKey.userId, contentCheck.category!, {
       apiKeyId: apiKey.id,
@@ -212,21 +291,12 @@ async function handleChat(
 
   const provider = detectModelProvider(model);
 
-  // ── Multimodal model validation ───────────────────────────────────────────
-  // Gemini accepts everything natively (text, image, audio, video, PDF,
-  // text documents) as inlineData. Partner models reached via the OpenAI-
-  // compatible MaaS endpoint or Mistral rawPredict accept images via
-  // `image_url` data URLs (works for vision-capable models like Claude,
-  // Pixtral, Grok-vision, Gemma multimodal, GLM-V, Llama Vision); the
-  // upstream returns a clean error for text-only models, so we let it
-  // decide. However, those endpoints do NOT understand audio/video/PDF
-  // inline data — we reject here with a clear message rather than silently
-  // stripping the attachment.
+  // ── Multimodal model validation (audio/video/pdf only Gemini) ─────────────
   if (provider === "openai-compat" || provider === "mistral-raw-predict") {
     const hasNonImageBinary = guardedMessages.some((msg) =>
       Array.isArray(msg.content) &&
       msg.content.some(
-        (part) => !("text" in part) && !part.mimeType.startsWith("image/"),
+        (part) => !("text" in part) && "mimeType" in part && !part.mimeType.startsWith("image/"),
       ),
     );
     if (hasNonImageBinary) {
@@ -240,9 +310,12 @@ async function handleChat(
     }
   }
 
-  const opts = {
+  const opts: ChatOptions = {
     temperature: temperature ?? undefined,
     maxOutputTokens: maxOutputTokens ?? undefined,
+    tools: tools as ChatOptions["tools"],
+    toolChoice: tool_choice,
+    parallelToolCalls: parallel_tool_calls,
   };
 
   if (stream) {
@@ -254,6 +327,8 @@ async function handleChat(
     let outputTokens = 0;
     let streamError: string | null = null;
     let clientDisconnected = false;
+    let finalFinishReason: string = "stop";
+    let finalToolCalls: ToolCall[] | undefined;
     const thinkFilter = new ThinkTagFilter();
     const abortController = new AbortController();
 
@@ -278,6 +353,31 @@ async function handleChat(
       }
     };
 
+    const emitToolCallDelta = (
+      idx: number, id: string | undefined, name: string | undefined, argsDelta: string | undefined,
+    ) => {
+      if (clientDisconnected) return;
+      if (openaiCompat) {
+        const tcChunk: Record<string, unknown> = { index: idx };
+        if (id) tcChunk.id = id;
+        tcChunk.type = "function";
+        const fn: Record<string, string> = {};
+        if (name) fn.name = name;
+        if (argsDelta !== undefined) fn.arguments = argsDelta;
+        if (Object.keys(fn).length) tcChunk.function = fn;
+        const chunk = {
+          id: requestId,
+          object: "chat.completion.chunk",
+          created,
+          model,
+          choices: [{ index: 0, delta: { tool_calls: [tcChunk] }, finish_reason: null }],
+        };
+        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+      } else {
+        res.write(`data: ${JSON.stringify({ id: requestId, model, tool_call_delta: { index: idx, id, name, argsDelta } })}\n\n`);
+      }
+    };
+
     const optsWithSignal = { ...opts, signal: abortController.signal };
 
     try {
@@ -291,11 +391,15 @@ async function handleChat(
       for await (const event of generator) {
         if (event.type === "delta") {
           emitDelta(thinkFilter.push(event.text));
+        } else if (event.type === "tool_call_delta") {
+          emitToolCallDelta(event.index, event.id, event.name, event.argumentsDelta);
         } else {
-          // Final done event — flush any buffered text outside think blocks
+          // done
           emitDelta(thinkFilter.flush());
           inputTokens = event.inputTokens;
           outputTokens = event.outputTokens;
+          finalFinishReason = event.finishReason;
+          finalToolCalls = event.toolCalls;
         }
       }
     } catch (err) {
@@ -342,13 +446,17 @@ async function handleChat(
             object: "chat.completion.chunk",
             created,
             model,
-            choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+            choices: [{ index: 0, delta: {}, finish_reason: finalFinishReason }],
             usage: { prompt_tokens: inputTokens, completion_tokens: outputTokens, total_tokens: inputTokens + outputTokens },
           };
           res.write(`data: ${JSON.stringify(doneChunk)}\n\n`);
         } else {
           res.write(
-            `data: ${JSON.stringify({ id: requestId, model, done: true, inputTokens, outputTokens, totalTokens: inputTokens + outputTokens, costUsd })}\n\n`,
+            `data: ${JSON.stringify({
+              id: requestId, model, done: true,
+              inputTokens, outputTokens, totalTokens: inputTokens + outputTokens,
+              costUsd, finishReason: finalFinishReason, toolCalls: finalToolCalls,
+            })}\n\n`,
           );
         }
       }
@@ -401,8 +509,14 @@ async function handleChat(
   });
 
   const cleanContent = stripThinkTags(chatResult.content);
+  const finishReason =
+    chatResult.toolCalls && chatResult.toolCalls.length ? "tool_calls" : chatResult.finishReason;
 
   if (openaiCompat) {
+    const message: Record<string, unknown> = { role: "assistant", content: cleanContent || null };
+    if (chatResult.toolCalls && chatResult.toolCalls.length) {
+      message.tool_calls = chatResult.toolCalls;
+    }
     res.json({
       id: requestId,
       object: "chat.completion",
@@ -410,8 +524,8 @@ async function handleChat(
       model,
       choices: [{
         index: 0,
-        message: { role: "assistant", content: cleanContent },
-        finish_reason: "stop",
+        message,
+        finish_reason: finishReason,
       }],
       usage: {
         prompt_tokens: chatResult.inputTokens,
@@ -424,6 +538,8 @@ async function handleChat(
       id: requestId,
       model,
       content: cleanContent,
+      toolCalls: chatResult.toolCalls,
+      finishReason,
       inputTokens: chatResult.inputTokens,
       outputTokens: chatResult.outputTokens,
       totalTokens: chatResult.inputTokens + chatResult.outputTokens,
@@ -435,7 +551,7 @@ async function handleChat(
 // Original endpoint (our format)
 router.post("/v1/chat", requireApiKey, (req, res) => handleChat(req, res, false));
 
-// OpenAI-compatible endpoint (used by n8n, LangChain, etc.)
+// OpenAI-compatible endpoint (used by n8n, LangChain, Make, etc.)
 router.post("/v1/chat/completions", requireApiKey, (req, res) => handleChat(req, res, true));
 
 export default router;

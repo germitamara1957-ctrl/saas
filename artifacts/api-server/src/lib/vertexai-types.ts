@@ -16,16 +16,98 @@ export type ImagePart = BinaryPart;
 
 export type ContentPart = TextPart | BinaryPart;
 
-export interface ChatMessage {
-  role: "user" | "model";
-  content: string | ContentPart[];
+/**
+ * Function/tool definition exactly as OpenAI defines it.
+ * Forwarded as-is to OpenAI-compat providers and converted to
+ * `functionDeclarations` for Gemini.
+ */
+export interface ToolDefinition {
+  type: "function";
+  function: {
+    name: string;
+    description?: string;
+    parameters?: Record<string, unknown>; // JSON Schema
+  };
 }
+
+/**
+ * A tool call emitted by the model. `arguments` is a JSON-encoded string,
+ * matching OpenAI's wire format. Gemini returns an object — we stringify it
+ * before exposing it through this type.
+ */
+export interface ToolCall {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+}
+
+export type ToolChoice =
+  | "auto"
+  | "none"
+  | "required"
+  | { type: "function"; function: { name: string } };
+
+export interface ChatMessage {
+  // "model" is our internal alias for OpenAI's "assistant".
+  role: "user" | "model" | "system" | "tool";
+  content: string | ContentPart[] | null;
+  // Set when role = "model"/"assistant" and the model decided to call tools.
+  tool_calls?: ToolCall[];
+  // Set when role = "tool" — links the result back to the originating call.
+  tool_call_id?: string;
+  // Optional function name for tool-role messages (helps Gemini map results).
+  name?: string;
+}
+
+export type FinishReason =
+  | "stop"
+  | "tool_calls"
+  | "length"
+  | "content_filter"
+  | "error";
 
 export interface ChatResult {
   content: string;
+  toolCalls?: ToolCall[];
+  finishReason: FinishReason;
   inputTokens: number;
   outputTokens: number;
 }
+
+/**
+ * Options accepted by every provider chat function.
+ * Tools/tool_choice are passed through to the provider when supplied.
+ */
+export interface ChatOptions {
+  temperature?: number;
+  maxOutputTokens?: number;
+  tools?: ToolDefinition[];
+  toolChoice?: ToolChoice;
+  parallelToolCalls?: boolean;
+  signal?: AbortSignal;
+}
+
+/**
+ * Streaming events. `tool_call_delta` carries OpenAI-style incremental
+ * fragments of a tool call (name and/or argument chunks). The final `done`
+ * event includes the finish reason and (if present) the assembled tool calls.
+ */
+export type StreamEvent =
+  | { type: "delta"; text: string }
+  | {
+      type: "tool_call_delta";
+      index: number;
+      id?: string;
+      name?: string;
+      argumentsDelta?: string;
+    }
+  | {
+      type: "done";
+      inputTokens: number;
+      outputTokens: number;
+      finishReason: FinishReason;
+      toolCalls?: ToolCall[];
+    };
 
 export interface ImageResult {
   images: Array<{ base64: string; mimeType: string }>;

@@ -106,7 +106,7 @@ router.post("/v1/responses", requireApiKey, async (req, res): Promise<void> => {
   }
 
   // Pre-flight credit check
-  const estimatedInput = messages.reduce((a, m) => a + Math.ceil(m.content.length / 4), 0);
+  const estimatedInput = messages.reduce((a, m) => a + Math.ceil((typeof m.content === "string" ? m.content.length : 0) / 4), 0);
   const estimatedOutput = maxOutputTokens ?? 2000;
   const minCost = calculateChatCost(planModel, estimatedInput, estimatedOutput);
   const availableForThisModel = modelInPlan ? apiKey.accountCreditBalance : apiKey.topupCredit;
@@ -241,8 +241,10 @@ router.post("/v1/responses", requireApiKey, async (req, res): Promise<void> => {
               delta: flushed,
             });
           }
-          inputTokens = event.inputTokens;
-          outputTokens = event.outputTokens;
+          if (event.type === "done") {
+            inputTokens = event.inputTokens;
+            outputTokens = event.outputTokens;
+          }
         }
       }
     } catch (err) {

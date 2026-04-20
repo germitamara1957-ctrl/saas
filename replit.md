@@ -299,6 +299,20 @@ Stripe was previously dismissed; not in use. Do **not** hardcode any payment cre
 
 ## Recent Changes (Apr 2026)
 
+### Session 36 — Function Calling / Tools support (n8n, Make, LangChain compatible)
+
+Added full OpenAI-compatible **tool calling** to `/v1/chat/completions` so the gateway works with agent platforms (n8n AI Agent, Make.com, LangChain, OpenAI SDK with `tools=`). Previously the schema silently dropped `tools` and `tool_choice`, so agents always got plain text back even when they expected structured tool calls — breaking every Agent workflow.
+
+1. **Types** (`vertexai-types.ts`): added `ToolDefinition`, `ToolCall`, `ToolChoice`, `FinishReason`, `ChatOptions`, `StreamEvent`. Extended `ChatMessage` with `tool_calls`, `tool_call_id`, `name`, and `system`/`tool` roles. `ChatResult` gained `toolCalls?` + required `finishReason`.
+2. **Gemini** (`vertexai-gemini.ts`): converts OpenAI `tools[]` → `functionDeclarations`, `tool_choice` → `toolConfig.functionCallingConfig` (auto/none/required/specific). Assistant `tool_calls` history → `functionCall` parts; `role:"tool"` messages → `functionResponse` parts. Response parses `functionCall` parts back into OpenAI `tool_calls` (with synthetic IDs and JSON-stringified arguments). Always uses REST when tools are present so the conversion lives in one place.
+3. **OpenAI-compat + Mistral** (`vertexai-compat.ts`): tools/tool_choice/parallel_tool_calls and `role:"tool"`/`tool_calls` are forwarded as-is — Vertex MaaS speaks the OpenAI format natively. Streaming accumulates `tool_calls` deltas and emits a final `done` with assembled tool calls.
+4. **Router** (`routes/v1/chat.ts`): schema accepts `tools`, `tool_choice`, `parallel_tool_calls`, `null` content, assistant `tool_calls`, and `role:"tool"|"function"` messages. Also accepts OpenAI multimodal `image_url` parts (data-URL → internal base64 form). Streaming SSE emits `delta.tool_calls` chunks then `finish_reason: "tool_calls"`. Non-streaming returns `{ message: { role:"assistant", content:null, tool_calls:[...] }, finish_reason:"tool_calls" }`.
+5. **Guardrails**: keyword check now skips `system`/`tool` messages and handles `null` content gracefully.
+
+**Tested live**: Gemini single tool call, multi-turn roundtrip (tool result → final answer), and streaming with tools. All three return the exact OpenAI wire format that n8n AI Agent expects.
+
+**What does NOT work** (intentionally): OpenAI Responses API built-in tools (Web Search / File Search / Code Interpreter) — these require OpenAI's proprietary infrastructure. Tell n8n users to keep "Use Responses API" toggle off.
+
 ### Session 35 — Subscription extension on re-purchase (Chargily webhook fix)
 
 Fixed a billing bug where re-subscribing to the **same plan** via Chargily while still on an active subscription would **overwrite** `currentPeriodEnd` instead of extending it — causing the user to lose all unused days from the prior period.
