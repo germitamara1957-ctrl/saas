@@ -299,6 +299,24 @@ Stripe was previously dismissed; not in use. Do **not** hardcode any payment cre
 
 ## Recent Changes (Apr 2026)
 
+### Session 35 — Subscription extension on re-purchase (Chargily webhook fix)
+
+Fixed a billing bug where re-subscribing to the **same plan** via Chargily while still on an active subscription would **overwrite** `currentPeriodEnd` instead of extending it — causing the user to lose all unused days from the prior period.
+
+1. **Bug location**: `routes/webhooks/chargily.ts` `plan_upgrade` branch was setting `currentPeriodEnd = now + 30d` unconditionally on every paid invoice.
+2. **Fix**: Reads the current subscription state first, then computes:
+   - `baseEnd = (stillActiveOnSamePlan && currentPeriodEnd > now) ? currentPeriodEnd : now`
+   - `newPeriodEnd = baseEnd + 30 days`
+   - `currentPeriodStartedAt` is **preserved** when extending (only renewed when starting a fresh period or switching plans).
+3. **Coverage**: Applied across all three enrollment branches (already-on-plan, planless-key, new-key) for parity with the admin `extend-subscription` route in `routes/admin/users.ts`.
+4. **Behavior matrix**:
+   - Same plan + active sub → days append (+30d to existing end)
+   - Same plan + expired sub → fresh 30-day window from now
+   - Different plan / first subscription → fresh 30-day window from now
+5. **Credit grant**: Unchanged — credits are still **added** to existing balance on every paid invoice (was already correct).
+
+Commit `e6205cd`, pushed to `main`.
+
 ### Session 34 — Daily request limit per plan (RPD)
 
 Adds an optional **per-plan daily request count cap** alongside the existing per-minute (RPM) limit.
