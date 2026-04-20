@@ -1,0 +1,95 @@
+name: Monthly security audit
+
+on:
+  schedule:
+    # 06:00 UTC on the 1st of every month (≈ 09:00 Asia/Riyadh).
+    - cron: "0 6 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    name: pnpm audit (production)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run pnpm audit
+        id: audit
+        # --prod: ignore dev-only advisories
+        # --audit-level=moderate: only fail on moderate or higher
+        # We capture the report so we can post it on the issue if it fails.
+        run: |
+          set +e
+          pnpm audit --prod --audit-level=moderate --json > audit.json
+          STATUS=$?
+          set -e
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          if [ "$STATUS" -ne 0 ]; then
+            echo "Vulnerabilities detected." >&2
+            head -c 60000 audit.json
+            exit 1
+          fi
+          echo "No vulnerabilities found."
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pnpm-audit-report
+          path: audit.json
+          if-no-files-found: ignore
+
+      - name: Open issue when audit fails
+        if: failure() && github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let report = '_(no audit report captured)_';
+            try {
+              const raw = fs.readFileSync('audit.json', 'utf8').slice(0, 50000);
+              report = '```json\n' + raw + '\n```';
+            } catch (_) {}
+
+            const title = `🚨 Monthly security audit failed (${new Date().toISOString().slice(0,10)})`;
+            const body = [
+              'The scheduled `pnpm audit --prod --audit-level=moderate` run reported one or more vulnerabilities.',
+              '',
+              `Workflow run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              '## Audit report (truncated)',
+              report,
+              '',
+              '## Suggested actions',
+              '1. Review the report and identify affected packages.',
+              '2. Check whether Dependabot already opened a fix PR.',
+              '3. If not, run `pnpm update <package>` locally and open a PR.',
+              '4. Close this issue once the audit is clean again.',
+            ].join('\n');
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['security', 'dependencies'],
+            });
