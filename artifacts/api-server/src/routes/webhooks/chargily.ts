@@ -198,13 +198,42 @@ router.post(
           const planlessKey = existingKeys.find(k => k.planId === null);
           const alreadyOnPlan = existingKeys.find(k => k.planId === targetPlanId);
 
+          // Compute the new subscription window so re-subscribing while an
+          // existing period is still active EXTENDS the period by 30 days
+          // instead of overwriting it (which would cost the user the unused
+          // remaining days). Mirrors admin extend-subscription behavior in
+          // routes/admin/users.ts.
+          const now = new Date();
+          const PERIOD_MS = 30 * 24 * 60 * 60 * 1000;
+          const [currentUserRow] = await db
+            .select({
+              currentPeriodEnd: usersTable.currentPeriodEnd,
+              currentPeriodStartedAt: usersTable.currentPeriodStartedAt,
+              currentPlanId: usersTable.currentPlanId,
+            })
+            .from(usersTable)
+            .where(eq(usersTable.id, credited.userId))
+            .limit(1);
+          const stillActiveOnSamePlan =
+            currentUserRow?.currentPlanId === targetPlanId &&
+            currentUserRow?.currentPeriodEnd != null &&
+            currentUserRow.currentPeriodEnd.getTime() > now.getTime();
+          const baseEnd = stillActiveOnSamePlan
+            ? currentUserRow!.currentPeriodEnd!
+            : now;
+          const periodEnd = new Date(baseEnd.getTime() + PERIOD_MS);
+          // Keep the original start date when extending an active period;
+          // start fresh otherwise (lapsed, plan switch, or first subscription).
+          const periodStartedAt =
+            stillActiveOnSamePlan && currentUserRow?.currentPeriodStartedAt
+              ? currentUserRow.currentPeriodStartedAt
+              : now;
+
           if (alreadyOnPlan) {
-            // User already on this plan — top up monthly credits to extend the period.
-            const now = new Date();
-            const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+            // User already on this plan — top up monthly credits + extend the period.
             await db.update(usersTable).set({
               currentPlanId: targetPlanId,
-              currentPeriodStartedAt: now,
+              currentPeriodStartedAt: periodStartedAt,
               currentPeriodEnd: periodEnd,
               ...(plan.monthlyCredits > 0 ? { creditBalance: sql`credit_balance + ${plan.monthlyCredits}` } : {}),
             }).where(eq(usersTable.id, credited.userId));
@@ -213,11 +242,9 @@ router.post(
               await tx.update(apiKeysTable)
                 .set({ planId: targetPlanId })
                 .where(eq(apiKeysTable.id, planlessKey.id));
-              const now = new Date();
-              const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
               const userUpdate: Record<string, unknown> = {
                 currentPlanId: targetPlanId,
-                currentPeriodStartedAt: now,
+                currentPeriodStartedAt: periodStartedAt,
                 currentPeriodEnd: periodEnd,
               };
               if (plan.monthlyCredits > 0) {
@@ -238,11 +265,9 @@ router.post(
                 name: `${plan.name} Key`,
                 isActive: true,
               });
-              const now = new Date();
-              const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
               const userUpdate: Record<string, unknown> = {
                 currentPlanId: targetPlanId,
-                currentPeriodStartedAt: now,
+                currentPeriodStartedAt: periodStartedAt,
                 currentPeriodEnd: periodEnd,
               };
               if (plan.monthlyCredits > 0) {
