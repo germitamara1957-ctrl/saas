@@ -387,6 +387,23 @@ Adds DZD→USD credit top-ups via Chargily Pay V2. Users pay in Algerian Dinars 
 
 **Webhook URL to configure in Chargily dashboard**: `https://<your-domain>/webhooks/chargily`.
 
+### Session 32 — Online plan upgrade via Chargily + referral attribution fix
+
+Two related billing improvements completed in the same window.
+
+1. **Online plan upgrade via Chargily** (`artifacts/api-server/src/routes/portal/billing.ts`, `artifacts/api-server/src/routes/webhooks/chargily.ts`, `artifacts/dashboard/src/pages/portal/Plans.tsx`):
+   - New `POST /portal/billing/plan-checkout` endpoint converts `plan.priceUsd` → DZD and creates a Chargily checkout with metadata `{ purpose: "plan_upgrade", planId }`. Persists a `payment_intents` row before redirect.
+   - Webhook now branches on `intent.metadata.purpose`: on `plan_upgrade` it enrolls the user (mirrors `POST /portal/plans/:id/enroll` — planless-key reuse / period extend / new key creation) with a fallback to top-up credit if the plan was deleted between checkout and webhook.
+   - Reliability: the post-CAS fulfillment block is wrapped in try/catch — on error the intent is reverted to `pending` and the dedup row is deleted so Chargily's retry can re-attempt fulfillment.
+   - Dashboard Plans page exposes an "Upgrade — Pay $X" button gated on `chargilyEnabled` (hidden when the feature flag is off); the WhatsApp manual-payment button remains as a fallback.
+
+2. **Referral commission attribution** (`artifacts/api-server/src/routes/webhooks/chargily.ts`):
+   - Previously every paid intent was recorded as `sourceType: "topup"`, even plan upgrades. This understated the basis for plan upgrades (it used the credited USD instead of `plan.priceUsd`) and broke source-type accuracy in the referral ledger.
+   - Now tracks a `referralBasis` through fulfillment: plan-upgrade success records `{ sourceType: "plan", basisAmountUsd: plan.priceUsd }`; the plan-deleted fallback (top-up credit applied) keeps `topup`; pure top-ups remain `topup` with `amountUsd`.
+   - Refund/dispute path tries `reverseReferralEarning` for both `"topup"` and `"plan"` since `UNIQUE(source_type, source_id)` means at most one row exists per `intent.id` — the non-matching call is a no-op.
+
+Final state: typecheck clean across all 4 projects (api-server, dashboard, mockup-sandbox, scripts), API server returning 200 on `/api/health`, dashboard serving normally.
+
 ### Session 31 — Polish: regression tests, skeleton loaders, dependabot, scheduled audit
 
 Four-item polish pass after the Session 30 hardening sprint. The regression tests immediately caught two real org-key isolation gaps that had been missed in P5/round-2.
