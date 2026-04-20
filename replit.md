@@ -299,6 +299,20 @@ Stripe was previously dismissed; not in use. Do **not** hardcode any payment cre
 
 ## Recent Changes (Apr 2026)
 
+### Session 34 — Daily request limit per plan (RPD)
+
+Adds an optional **per-plan daily request count cap** alongside the existing per-minute (RPM) limit.
+
+1. **Schema** (`lib/db/src/schema/plans.ts`): `plans.rpd integer NOT NULL DEFAULT 0` (0 = unlimited). Migrated via `db:push --force`.
+2. **Limiter** (`artifacts/api-server/src/lib/dailyRequestLimit.ts`): Redis-first counter `rpd:user:{id}:{YYYYMMDD}` with 26h TTL (auto-resets at 00:00 UTC). DB fallback joins `usage_logs → api_keys` to count today's requests for the user.
+3. **Enforcement**: `requireApiKey` middleware checks daily limit after spending limits, before per-key cap. Returns HTTP 429 with `dailyRequestsUsed`/`dailyRequestLimit` fields. Sets response headers `X-Daily-Request-Limit` and `X-Daily-Requests-Used` on every successful request.
+4. **Admin UI** (`pages/admin/Plans.tsx`): new `RPD` field in both Create + Edit dialogs with help text ("0 = unlimited"). Form schema, `defaultValues`, and `openEditDialog` all updated.
+5. **Portal UI** (`pages/portal/Plans.tsx`): Plan cards now display "Daily Limit" row showing `{n} / day` or `Unlimited`.
+6. **API contract**: `lib/api-spec/openapi.yaml` Plan/CreatePlanBody/UpdatePlanBody all gained `rpd` (required on Plan, optional on Create/Update). Generated zod + TS types hand-patched to mirror (orval codegen pre-existingly broken — unrelated to this change).
+7. **i18n**: `admin.plans.dailyLimit` + `dailyLimitHelp` added in `en.json` and `ar.json`.
+
+Counter is incremented atomically via Redis `INCR`+`EXPIRE`; if limit exceeded, the counter is decremented back so users aren't penalized for blocked attempts.
+
 ### Session 33 — Referral System Phase 1 (8% commission on real revenue)
 
 Adds a complete referral pipeline. Every user gets a unique 8-char base31 code (no confusable chars: I/L/O/0/1). Commission is **always** calculated on actual USD paid — `payment_intents.amountUsd` — never on the credit value granted to the referee. A $29 plan that grants $50 credit pays an $29 × 8% = $2.32 commission, NOT $50 × 8%.

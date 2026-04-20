@@ -33,6 +33,7 @@ router.post("/admin/plans", requireAdmin, async (req, res): Promise<void> => {
       description: parsed.data.description ?? null,
       monthlyCredits: parsed.data.monthlyCredits,
       rpm: parsed.data.rpm,
+      rpd: parsed.data.rpd ?? 0,
       maxApiKeys: parsed.data.maxApiKeys ?? 3,
       maxWebhooks: parsed.data.maxWebhooks ?? 3,
       modelsAllowed: parsed.data.modelsAllowed,
@@ -82,6 +83,7 @@ router.patch("/admin/plans/:id", requireAdmin, async (req, res): Promise<void> =
   if (parsed.data.description !== undefined) updates.description = parsed.data.description;
   if (parsed.data.monthlyCredits !== undefined) updates.monthlyCredits = parsed.data.monthlyCredits;
   if (parsed.data.rpm !== undefined) updates.rpm = parsed.data.rpm;
+  if (parsed.data.rpd !== undefined) updates.rpd = parsed.data.rpd;
   if (parsed.data.maxApiKeys !== undefined) updates.maxApiKeys = parsed.data.maxApiKeys;
   if (parsed.data.maxWebhooks !== undefined) updates.maxWebhooks = parsed.data.maxWebhooks;
   if (parsed.data.modelsAllowed !== undefined) updates.modelsAllowed = parsed.data.modelsAllowed;

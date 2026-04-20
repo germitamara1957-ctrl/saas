@@ -9,6 +9,7 @@ export const plansTable = pgTable("plans", {
   description: text("description"),
   monthlyCredits: numeric("monthly_credits", { precision: 18, scale: 8, mode: "number" }).notNull().default(0),
   rpm: integer("rpm").notNull().default(60),
+  rpd: integer("rpd").notNull().default(0),
   maxApiKeys: integer("max_api_keys").notNull().default(3),
   maxWebhooks: integer("max_webhooks").notNull().default(3),
   modelsAllowed: text("models_allowed").array().notNull().default(sql`ARRAY[]::text[]`),

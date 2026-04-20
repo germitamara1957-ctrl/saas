@@ -313,6 +313,18 @@ export default function PortalPlans() {
                     </span>
                     <span className="font-mono font-medium">{plan.rpm} RPM</span>
                   </div>
+                  {(plan as typeof plan & { rpd?: number }).rpd != null && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground flex items-center gap-1">
+                        <Zap className="h-3 w-3" /> Daily Limit
+                      </span>
+                      <span className="font-mono font-medium">
+                        {(plan as typeof plan & { rpd?: number }).rpd! > 0
+                          ? `${(plan as typeof plan & { rpd?: number }).rpd!.toLocaleString()} / day`
+                          : "Unlimited"}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Models */}

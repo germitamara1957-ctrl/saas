@@ -13,6 +13,7 @@ export interface Plan {
   description?: string | null;
   monthlyCredits: number;
   rpm: number;
+  rpd: number;
   maxApiKeys: number;
   modelsAllowed: string[];
   priceUsd: number;

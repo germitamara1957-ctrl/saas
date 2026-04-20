@@ -25,6 +25,7 @@ const planSchema = z.object({
   description: z.string().optional(),
   monthlyCredits: z.coerce.number().min(0),
   rpm: z.coerce.number().min(0),
+  rpd: z.coerce.number().min(0).default(0),
   maxApiKeys: z.coerce.number().min(1).default(3),
   maxWebhooks: z.coerce.number().min(0).default(3),
   modelsAllowed: z.string().min(1),
@@ -260,6 +261,7 @@ export default function AdminPlans() {
       description: "",
       monthlyCredits: 1000,
       rpm: 60,
+      rpd: 0,
       maxApiKeys: 3,
       maxWebhooks: 3,
       modelsAllowed: "gemini-3.0-flash-preview,gemini-3.1-pro-preview",
@@ -269,7 +271,7 @@ export default function AdminPlans() {
 
   const editForm = useForm<z.infer<typeof planSchema>>({
     resolver: zodResolver(planSchema),
-    defaultValues: { name: "", description: "", monthlyCredits: 1000, rpm: 60, maxApiKeys: 3, maxWebhooks: 3, modelsAllowed: "", priceUsd: 0 },
+    defaultValues: { name: "", description: "", monthlyCredits: 1000, rpm: 60, rpd: 0, maxApiKeys: 3, maxWebhooks: 3, modelsAllowed: "", priceUsd: 0 },
   });
 
   const openEditDialog = (plan: Plan) => {
@@ -279,6 +281,7 @@ export default function AdminPlans() {
       description: plan.description ?? "",
       monthlyCredits: plan.monthlyCredits,
       rpm: plan.rpm,
+      rpd: (plan as Plan & { rpd?: number }).rpd ?? 0,
       maxApiKeys: (plan as Plan & { maxApiKeys?: number }).maxApiKeys ?? 3,
       modelsAllowed: plan.modelsAllowed.join(","),
       priceUsd: plan.priceUsd,
@@ -573,6 +576,14 @@ export default function AdminPlans() {
                     <FormMessage />
                   </FormItem>
                 )} />
+                <FormField control={editForm.control} name="rpd" render={({ field }) => (
+                  <FormItem>
+                    <Label>{t("admin.plans.dailyLimit")}</Label>
+                    <FormControl><Input type="number" min="0" {...field} /></FormControl>
+                    <p className="text-xs text-muted-foreground">{t("admin.plans.dailyLimitHelp")}</p>
+                    <FormMessage />
+                  </FormItem>
+                )} />
                 <FormField control={editForm.control} name="maxApiKeys" render={({ field }) => (
                   <FormItem>
                     <Label>Max API Keys</Label>
@@ -680,6 +691,20 @@ export default function AdminPlans() {
                       <FormControl>
                         <Input type="number" min="1" {...field} />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="rpd"
+                  render={({ field }) => (
+                    <FormItem>
+                      <Label>{t("admin.plans.dailyLimit")}</Label>
+                      <FormControl>
+                        <Input type="number" min="0" {...field} />
+                      </FormControl>
+                      <p className="text-xs text-muted-foreground">{t("admin.plans.dailyLimitHelp")}</p>
                       <FormMessage />
                     </FormItem>
                   )}

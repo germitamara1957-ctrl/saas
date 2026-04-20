@@ -11,6 +11,7 @@ export interface CreatePlanBody {
   description?: string;
   monthlyCredits: number;
   rpm: number;
+  rpd?: number;
   maxApiKeys?: number;
   maxWebhooks?: number;
   modelsAllowed: string[];

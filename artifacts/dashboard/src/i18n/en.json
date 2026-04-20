@@ -165,6 +165,8 @@
       "description": "Description",
       "creditsHelp": "Credits allocated per billing period",
       "rpmHelp": "Max requests per minute",
+      "dailyLimit": "Daily Limit (RPD)",
+      "dailyLimitHelp": "Max requests per day (0 = unlimited). Resets at 00:00 UTC.",
       "priceHelp": "0 = free plan",
       "modelsHelp": "Select which models this plan can access",
       "creating": "Creating...",

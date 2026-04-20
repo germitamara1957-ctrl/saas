@@ -5,6 +5,7 @@ import { hashApiKey } from "../lib/crypto";
 import { sendEmail, buildLowCreditEmail } from "../lib/email";
 import { logger } from "../lib/logger";
 import { checkSpendingLimits, checkOrgSpendingLimits } from "../lib/spendingLimits";
+import { checkDailyRequestLimit } from "../lib/dailyRequestLimit";
 import { sql } from "drizzle-orm";
 import { usageLogsTable } from "@workspace/db";
 import type { BillingTarget } from "../lib/orgUtils";
@@ -185,6 +186,21 @@ export async function requireApiKey(
       monthlyLimit: spendCheck.monthlyLimit,
     });
     return;
+  }
+
+  // Per-plan daily request count limit (rpd=0 => unlimited)
+  if (plan.rpd && plan.rpd > 0) {
+    const dailyCheck = await checkDailyRequestLimit(key.userId, plan.rpd);
+    res.setHeader("X-Daily-Request-Limit", String(plan.rpd));
+    res.setHeader("X-Daily-Requests-Used", String(dailyCheck.used));
+    if (!dailyCheck.allowed) {
+      res.status(429).json({
+        error: `Daily request limit reached (${dailyCheck.used} of ${dailyCheck.limit} requests today). Limit resets at 00:00 UTC.`,
+        dailyRequestsUsed: dailyCheck.used,
+        dailyRequestLimit: dailyCheck.limit,
+      });
+      return;
+    }
   }
 
   // Per-key monthly spending limit (independent from account-level cap)

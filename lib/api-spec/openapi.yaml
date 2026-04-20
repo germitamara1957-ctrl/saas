@@ -1132,6 +1132,8 @@ components:
           type: number
         rpm:
           type: integer
+        rpd:
+          type: integer
         maxApiKeys:
           type: integer
         modelsAllowed:
@@ -1148,7 +1150,7 @@ components:
         updatedAt:
           type: string
           format: date-time
-      required: [id, name, monthlyCredits, rpm, maxApiKeys, maxWebhooks, modelsAllowed, priceUsd, isActive, createdAt, updatedAt]
+      required: [id, name, monthlyCredits, rpm, rpd, maxApiKeys, maxWebhooks, modelsAllowed, priceUsd, isActive, createdAt, updatedAt]
 
     CreatePlanBody:
       type: object
@@ -1160,6 +1162,8 @@ components:
         monthlyCredits:
           type: number
         rpm:
+          type: integer
+        rpd:
           type: integer
         maxApiKeys:
           type: integer
@@ -1185,6 +1189,8 @@ components:
         monthlyCredits:
           type: number
         rpm:
+          type: integer
+        rpd:
           type: integer
         maxApiKeys:
           type: integer
