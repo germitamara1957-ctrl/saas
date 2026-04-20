@@ -143,6 +143,15 @@ router.post(
       // Branch on intent purpose: top-up (default) or plan upgrade.
       let purpose: "topup" | "plan_upgrade" = "topup";
       let targetPlanId: number | null = null;
+      // Tracks what to record as the referral earning AFTER successful
+      // fulfillment. For plan upgrades the basis is plan.priceUsd (actual
+      // money paid for the plan), for top-ups it's the credited USD amount.
+      // If the plan-upgrade falls back to top-up (plan deleted), we record
+      // it as a top-up earning instead.
+      let referralBasis: { sourceType: "topup" | "plan"; basisAmountUsd: number } = {
+        sourceType: "topup",
+        basisAmountUsd: Number(credited.amountUsd),
+      };
       try {
         const meta = intent.metadata ? JSON.parse(intent.metadata) as { purpose?: string; planId?: number } : null;
         if (meta?.purpose === "plan_upgrade" && Number.isInteger(meta.planId)) {
@@ -172,6 +181,8 @@ router.post(
             .update(usersTable)
             .set({ topupCreditBalance: sql`${usersTable.topupCreditBalance} + ${credited.amountUsd}` })
             .where(eq(usersTable.id, credited.userId));
+          // Fall back to top-up earning since user got top-up credit, not a plan.
+          referralBasis = { sourceType: "topup", basisAmountUsd: Number(credited.amountUsd) };
         } else {
           // Enroll user — same logic as POST /portal/plans/:planId/enroll.
           const existingKeys = await db
