@@ -74,6 +74,8 @@ export default function PortalLogin() {
     if (googleReason === "cancelled") return isAr ? "تم إلغاء تسجيل الدخول عبر Google." : "Google sign-in was cancelled.";
     if (googleReason === "email_not_verified") return isAr ? "حساب Google غير مُحقّق البريد." : "Your Google email is not verified.";
     if (googleReason === "account_disabled") return isAr ? "هذا الحساب معطّل. تواصل مع الدعم." : "This account is disabled. Contact support.";
+    if (googleReason === "too_many_signups") return isAr ? "تم تجاوز الحد المسموح به لإنشاء الحسابات من هذا العنوان. حاول لاحقاً." : "Too many accounts have been created from this address. Please try again later.";
+    if (googleReason === "link_blocked_unverified") return isAr ? "يوجد حساب بنفس البريد لكنه غير مُحقّق. سجّل دخولاً بكلمة المرور وحقّق البريد أولاً." : "An unverified account exists with this email. Sign in with your password and verify it first.";
     return isAr ? "تعذّر تسجيل الدخول عبر Google. حاول مجدداً." : "Google sign-in failed. Please try again.";
   })();
 

@@ -12,6 +12,15 @@ import {
   buildGoogleAuthUrl,
   exchangeCodeForUserInfo,
 } from "../../lib/googleOAuth";
+import { checkRegistrationLimit } from "../../lib/ipRateLimit";
+
+function getClientIp(req: Request): string {
+  const xff = req.headers["x-forwarded-for"];
+  if (typeof xff === "string" && xff.length > 0) {
+    return xff.split(",")[0]!.trim();
+  }
+  return req.ip ?? req.socket.remoteAddress ?? "unknown";
+}
 
 const router: IRouter = Router();
 
@@ -183,8 +192,17 @@ router.get("/portal/auth/google/callback", async (req, res): Promise<void> => {
           .returning();
         user = updated!;
       } else {
-        // Brand-new user — create account + provision starter API key like the
-        // password signup flow. Google email is trusted, so emailVerified=true.
+        // Brand-new user — enforce per-IP signup limit (same as password signup)
+        // to prevent automated multi-account creation via Google OAuth.
+        const ip = getClientIp(req);
+        const limit = await checkRegistrationLimit(ip);
+        if (!limit.allowed) {
+          logger.warn({ ip }, "Google signup blocked by per-IP rate limit");
+          return fail("too_many_signups");
+        }
+
+        // Create account + provision starter API key like the password signup
+        // flow. Google email is trusted, so emailVerified=true.
         const [freePlan] = await db
           .select()
           .from(plansTable)
