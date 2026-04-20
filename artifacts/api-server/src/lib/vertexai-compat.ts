@@ -1,22 +1,56 @@
 import { type ChatMessage, type ChatResult, OPENAI_COMPAT_IDS, MISTRAL_RAW_PREDICT_IDS } from "./vertexai-types";
 import { getActiveProvider, getAccessToken, type ResolvedProvider } from "./vertexai-provider";
 
+type OpenAIContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
 interface OpenAIMessage {
   role: "user" | "assistant" | "system";
-  content: string;
+  content: string | OpenAIContentPart[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Converts our internal ChatMessage[] to OpenAI-compatible messages.
+ * Multimodal-capable partner models (Claude, Llama Vision, Pixtral, Grok, Gemma,
+ * GLM, etc.) accept the standard OpenAI `image_url` format with data URLs.
+ * Anything that's not text or an image is dropped here — the chat route blocks
+ * non-image binary parts upstream so we never silently lose user content.
+ */
 function toOpenAIMessages(messages: ChatMessage[]): OpenAIMessage[] {
   return messages.map((m) => {
     const role = m.role === "model" ? "assistant" : "user";
-    const content = typeof m.content === "string"
-      ? m.content
-      : m.content.filter((p) => p.type === "text").map((p) => (p as { type: "text"; text: string }).text).join("\n");
-    return { role, content };
+
+    if (typeof m.content === "string") {
+      return { role, content: m.content };
+    }
+
+    const parts: OpenAIContentPart[] = [];
+    for (const p of m.content) {
+      if ("text" in p) {
+        parts.push({ type: "text", text: p.text });
+      } else if (p.mimeType.startsWith("image/")) {
+        // Standard OpenAI multimodal format — works with Claude, Grok, Gemma,
+        // GLM, Pixtral and any other vision-capable partner via Vertex MaaS.
+        parts.push({
+          type: "image_url",
+          image_url: { url: `data:${p.mimeType};base64,${p.base64}` },
+        });
+      }
+      // Other binary types (audio/video/pdf) are intentionally not forwarded
+      // — they were already validated and blocked at the chat route layer.
+    }
+
+    // If the entire message was a single text part, send a plain string for
+    // maximum compatibility with strict providers.
+    if (parts.length === 1 && parts[0]!.type === "text") {
+      return { role, content: parts[0]!.text };
+    }
+    return { role, content: parts };
   });
 }
 

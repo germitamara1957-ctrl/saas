@@ -213,18 +213,26 @@ async function handleChat(
   const provider = detectModelProvider(model);
 
   // ── Multimodal model validation ───────────────────────────────────────────
-  // Binary parts (images, audio, video, documents) in message content are
-  // only supported for Gemini models on this gateway. Reject early with a
-  // clear error instead of silently stripping the attachments.
+  // Gemini accepts everything natively (text, image, audio, video, PDF,
+  // text documents) as inlineData. Partner models reached via the OpenAI-
+  // compatible MaaS endpoint or Mistral rawPredict accept images via
+  // `image_url` data URLs (works for vision-capable models like Claude,
+  // Pixtral, Grok-vision, Gemma multimodal, GLM-V, Llama Vision); the
+  // upstream returns a clean error for text-only models, so we let it
+  // decide. However, those endpoints do NOT understand audio/video/PDF
+  // inline data — we reject here with a clear message rather than silently
+  // stripping the attachment.
   if (provider === "openai-compat" || provider === "mistral-raw-predict") {
-    const hasBinaryParts = guardedMessages.some((msg) =>
+    const hasNonImageBinary = guardedMessages.some((msg) =>
       Array.isArray(msg.content) &&
-      msg.content.some((part) => part.type !== "text"),
+      msg.content.some(
+        (part) => !("text" in part) && !part.mimeType.startsWith("image/"),
+      ),
     );
-    if (hasBinaryParts) {
+    if (hasNonImageBinary) {
       sendError(
         res, 400,
-        `Model "${model}" does not support file/image/audio/document attachments. Multimodal inputs are only supported for Gemini models (gemini-*).`,
+        `Model "${model}" only supports text and image inputs. Audio, video, and document (PDF) attachments are only supported by Gemini models (gemini-*). Either switch model or extract the text from your document client-side.`,
         openaiCompat,
         { code: "model_not_supported" },
       );
